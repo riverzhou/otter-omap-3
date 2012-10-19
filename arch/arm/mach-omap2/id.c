@@ -233,14 +233,15 @@ static void __init omap4_check_features(void)
 
 	omap4_features = 0;
 
-	si_type =
-	  (read_tap_reg(OMAP4_CTRL_MODULE_CORE_STD_FUSE_PROD_ID_1) >> 16) & 3;
+	si_type = OMAP4_SILICON_TYPE_PERFORMANCE ;
 
 	switch (si_type) {
 	case OMAP4_SILICON_TYPE_PERFORMANCE:
 		/* High performance device */
 		if (cpu_is_omap443x())
 			omap4_features |= OMAP4_HAS_MPU_1_2GHZ;
+//			omap4_features |= OMAP4_HAS_MPU_1_3GHZ;
+//			omap4_features |= OMAP4_HAS_IVA_430MHZ;
 		else if (cpu_is_omap446x() || cpu_is_omap447x()) {
 			omap4_features |= OMAP4_HAS_MPU_1_5GHZ;
 			omap4_features |= OMAP4_HAS_IVA_500MHZ;
