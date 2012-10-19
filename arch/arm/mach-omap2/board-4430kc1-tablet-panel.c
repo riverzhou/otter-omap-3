@@ -175,7 +175,7 @@ static struct platform_device sdp4430_keypad_led = {
 static struct omap_pwm_led_platform_data kc1_led_data = {
 	.name		 = "lcd-backlight",
 	.intensity_timer = 10,
-//	.def_brightness	 = 0x7F,
+	.def_brightness	 = 0x7F,
 };
 
 static struct platform_device kc1_led_device = {
