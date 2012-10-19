@@ -780,8 +780,11 @@ int soc_pcm_close(struct snd_pcm_substream *substream)
 	/* Muting the DAC suppresses artifacts caused during digital
 	 * shutdown, for example from stopping clocks.
 	 */
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK)
+	/* MISTRAL : modified the following if condtion to check for record stream also */
+	if ((substream->stream == SNDRV_PCM_STREAM_PLAYBACK) ||
+	   (substream->stream != SNDRV_PCM_STREAM_PLAYBACK)) {
 		snd_soc_dai_digital_mute(codec_dai, 1);
+	}
 
 	if (cpu_dai->driver->ops->shutdown)
 		cpu_dai->driver->ops->shutdown(substream, cpu_dai);
@@ -861,7 +864,9 @@ int soc_pcm_prepare(struct snd_pcm_substream *substream)
 	}
 
 	/* cancel any delayed stream shutdown that is pending */
-	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK &&
+	/* MISTRAL : modified the condition check for record also */
+	if (((substream->stream == SNDRV_PCM_STREAM_PLAYBACK) ||  
+             (substream->stream != SNDRV_PCM_STREAM_PLAYBACK))  &&
 	    codec_dai->pop_wait) {
 		codec_dai->pop_wait = 0;
 		cancel_delayed_work(&rtd->delayed_work);
@@ -4200,6 +4205,23 @@ fail:
 	return ret;
 }
 EXPORT_SYMBOL_GPL(snd_soc_register_codec);
+
+/**
+ * snd_soc_get_codec - Retrieves the Codec Pointers for a given DEV
+ *
+ * @dev: DEVICE Pointer
+ */
+struct snd_soc_codec * snd_soc_get_codec(struct device *dev)
+{
+	struct snd_soc_codec *codec;
+
+	list_for_each_entry(codec, &codec_list, list) {
+		if (dev == codec->dev)
+			return (codec);
+	}
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(snd_soc_get_codec);
 
 /**
  * snd_soc_unregister_codec - Unregister a codec from the ASoC core
