@@ -636,8 +636,6 @@ static void __init omap_kc1_init(void)
 	int package = OMAP_PACKAGE_CBS;
 
 	quanta_boardids();
-	if (omap_rev() == OMAP4430_REV_ES1_0)
-		package = OMAP_PACKAGE_CBL;
 
 	omap4_mux_init(board_mux, board_wkup_mux, package);
 
