@@ -1190,6 +1190,31 @@ static int omap4_sar_not_accessible(void)
 	u32 usbhost_state, usbtll_state;
 
 	/*
+	 * Errata i719: Multiple OFF Mode Transitions Introduce Corruption
+	 *
+	 * Workaround: Set the CM_L3INIT_HSUSBHOST_CLKCTRL[1:0] MODULEMODE
+	 * bit field to 0x2 (enabled) for 1 ms before save sequence
+	 */
+	if (cpu_is_omap443x()) {
+		u32 val;
+		val = omap4_cminst_read_inst_reg(OMAP4430_CM2_PARTITION,
+				OMAP4430_CM2_L3INIT_INST,
+				OMAP4_CM_L3INIT_USB_HOST_CLKCTRL_OFFSET);
+
+		if (!(val & BIT(OMAP4430_MODULEMODE_SWCTRL))) {
+			val |= BIT(OMAP4430_MODULEMODE_SWCTRL);
+			omap4_cminst_write_inst_reg(val, OMAP4430_CM2_PARTITION,
+				OMAP4430_CM2_L3INIT_INST,
+				OMAP4_CM_L3INIT_USB_HOST_CLKCTRL_OFFSET);
+			mdelay(1);
+			val &= ~BIT(OMAP4430_MODULEMODE_SWCTRL);
+			omap4_cminst_write_inst_reg(val, OMAP4430_CM2_PARTITION,
+				OMAP4430_CM2_L3INIT_INST,
+				OMAP4_CM_L3INIT_USB_HOST_CLKCTRL_OFFSET);
+		}
+	}
+
+	/*
 	 * Make sure that USB host and TLL modules are not
 	 * enabled before attempting to save the context
 	 * registers, otherwise this will trigger an exception.
