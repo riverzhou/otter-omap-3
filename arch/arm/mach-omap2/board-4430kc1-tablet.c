@@ -725,14 +725,19 @@ static void __init omap_4430sdp_reserve(void)
 #else
 	omap4_kc1_android_display_setup(NULL);
 #endif
-	omap_ram_console_init(OMAP_RAM_CONSOLE_START_DEFAULT, OMAP_RAM_CONSOLE_SIZE_DEFAULT);
+
+	omap_ram_console_init(OMAP_RAM_CONSOLE_START_DEFAULT,
+			OMAP_RAM_CONSOLE_SIZE_DEFAULT);
 
 	/* do the static reservations first */
 	memblock_remove(PHYS_ADDR_SMC_MEM, PHYS_ADDR_SMC_SIZE);
 	memblock_remove(PHYS_ADDR_DUCATI_MEM, PHYS_ADDR_DUCATI_SIZE);
 	/* ipu needs to recognize secure input buffer area as well */
-	omap_ipu_set_static_mempool(PHYS_ADDR_DUCATI_MEM, PHYS_ADDR_DUCATI_SIZE + OMAP4_ION_HEAP_SECURE_INPUT_SIZE);
-#ifdef CONFIG_OMAP_REMOTE_PROC_DSP
+	omap_ipu_set_static_mempool(PHYS_ADDR_DUCATI_MEM, PHYS_ADDR_DUCATI_SIZE +
+					OMAP4_ION_HEAP_SECURE_INPUT_SIZE +
+					OMAP4_ION_HEAP_SECURE_OUTPUT_WFDHDCP_SIZE);
+//#ifdef CONFIG_OMAP_REMOTE_PROC_DSP
+#if 0
 	memblock_remove(PHYS_ADDR_TESLA_MEM, PHYS_ADDR_TESLA_SIZE);
 	omap_dsp_set_static_mempool(PHYS_ADDR_TESLA_MEM, PHYS_ADDR_TESLA_SIZE);
 #endif
