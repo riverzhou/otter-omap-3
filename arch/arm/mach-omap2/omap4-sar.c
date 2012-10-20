@@ -243,13 +243,6 @@ static const u32 omap443x_sar_ram1_layout[][4] = {
 	{L3_CLK3_INDEX, 0x210, 1, 0x000002E8},
 	{CM2_INDEX, OMAP4430_CM2_RESTORE_INST +
 		OMAP4_CM_SDMA_STATICDEP_RESTORE_OFFSET, 1, 0x00000924},
-	/* Due to errata i719 (Multiple OFF Mode Transitions Introduce
-	 * Corruption) the USB host context must only be saved if the USB host
-	 * controller has been resumed since the previous OFF mode transition.
-	 * Therefore move the USB SAR context descriptors to the end of the
-	 * array, following the sDMA context, so we can skip them if we do not
-	 * need to save the USB host context.
-	 */
 	{CM2_INDEX, OMAP4430_CM2_RESTORE_INST +
 	OMAP4_CM_L3INIT_USB_HOST_CLKCTRL_RESTORE_OFFSET, 1, 0x000002EC},
 	{CM2_INDEX, OMAP4430_CM2_RESTORE_INST +
@@ -1244,8 +1237,6 @@ static int omap4_sar_not_accessible(void)
   */
 int omap4_sar_save(void)
 {
-	unsigned uhh_save = 1;
-
 	/*
 	 * Not supported on ES1.0 silicon
 	 */
@@ -1260,19 +1251,13 @@ int omap4_sar_save(void)
 		return -EBUSY;
 	}
 
-	if (cpu_is_omap443x() && !omap4430_usbhs_update_sar()) {
-		pr_debug("%s: NOT saving USB SAR context!\n", __func__);
-		uhh_save = 0;
-	}
-
 	/*
 	 * SAR bits and clocks needs to be enabled
 	 */
 	clkdm_wakeup(l3init_clkdm);
-	if (uhh_save)
-		pwrdm_enable_hdwr_sar(l3init_pwrdm);
-	clk_enable(usb_tll_ck);
+	pwrdm_enable_hdwr_sar(l3init_pwrdm);
 	clk_enable(usb_host_ck);
+	clk_enable(usb_tll_ck);
 
 	/* Save SAR BANK1 */
 	if (cpu_is_omap446x())
@@ -1282,14 +1267,12 @@ int omap4_sar_save(void)
 		sar_save(ARRAY_SIZE(omap447x_sar_ram1_layout), SAR_BANK1_OFFSET,
 			 omap447x_sar_ram1_layout);
 	else
-		sar_save((ARRAY_SIZE(omap443x_sar_ram1_layout) -
-			(uhh_save ? 0 : OMAP4430_USBHOST_CTX_NUM)),
-			SAR_BANK1_OFFSET, omap443x_sar_ram1_layout);
+		sar_save(ARRAY_SIZE(omap443x_sar_ram1_layout), SAR_BANK1_OFFSET,
+			 omap443x_sar_ram1_layout);
 
 	clk_disable(usb_host_ck);
 	clk_disable(usb_tll_ck);
-	if (uhh_save)
-		pwrdm_disable_hdwr_sar(l3init_pwrdm);
+	pwrdm_disable_hdwr_sar(l3init_pwrdm);
 	clkdm_allow_idle(l3init_clkdm);
 
 	/* Save SAR BANK2 */
