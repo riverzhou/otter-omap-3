@@ -3278,8 +3278,10 @@ static int wm8962_mute(struct snd_soc_dai *dai, int mute)
 	struct snd_soc_codec *codec = dai->codec;
 	int val;
 
-	if (mute)
+	if (mute){
 		val = WM8962_DAC_MUTE;
+		snd_soc_write(codec,WM8962_CHARGE_PUMP_1,0x0);
+	}
 	else
 		val = 0;
 

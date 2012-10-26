@@ -162,6 +162,11 @@
 #define MMC_PU				(0x1 << 3)
 #define MMC_PD				(0x1 << 2)
 
+/* TWL6030 control interface  registers */
+#define TWL6030_TOGGLE1			0x90
+#define TWL6030_TOGGLE2			0x91
+#define TWL6030_TOGGLE3			0x92
+
 #define VLOW_INT_MASK			(0x1 << 2)
 
 #define TWL_SIL_TYPE(rev)		((rev) & 0x00FFFFFF)
@@ -938,5 +943,5 @@ static inline int twl4030charger_usb_en(int enable) { return 0; }
 #define TWL6025_REG_VIO		60
 
 #define TWL6030_REG_CLK32KAUDIO	61
-
+#define PHOENIX_MSK_TRANSITION      0x20
 #endif /* End of __TWL4030_H */

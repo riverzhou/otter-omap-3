@@ -303,6 +303,22 @@ static void omap4_enter_idle_primary(struct omap4_processor_cx *cx)
 
 	cpu_pm_enter();
 
+	if (skip_off)
+		goto out;
+
+	if (!cpu_is_offline(1)) {
+		/* spin until cpu1 is really off */
+		while ((pwrdm_read_pwrst(cpu1_pd) != PWRDM_POWER_OFF) && count--)
+			cpu_relax();
+
+		if (pwrdm_read_pwrst(cpu1_pd) != PWRDM_POWER_OFF)
+			goto out;
+
+		ret = pwrdm_wait_transition(cpu1_pd);
+		if (ret)
+			goto out;
+	}
+
 	if (!keep_mpu_on) {
 		pwrdm_set_logic_retst(mpu_pd, cx->mpu_logic_state);
 		omap_set_pwrdm_state(mpu_pd, cx->mpu_state);
@@ -312,20 +328,6 @@ static void omap4_enter_idle_primary(struct omap4_processor_cx *cx)
 		pwrdm_set_logic_retst(core_pd, cx->core_logic_state);
 		omap_set_pwrdm_state(core_pd, cx->core_state);
 	}
-
-	if (skip_off)
-		goto out;
-
-	/* spin until cpu1 is really off */
-	while ((pwrdm_read_pwrst(cpu1_pd) != PWRDM_POWER_OFF) && count--)
-		cpu_relax();
-
-	if (pwrdm_read_pwrst(cpu1_pd) != PWRDM_POWER_OFF)
-		goto wake_cpu1;
-
-	ret = pwrdm_wait_transition(cpu1_pd);
-	if (ret)
-		goto wake_cpu1;
 
 	pr_debug("%s: cpu0 down\n", __func__);
 
@@ -337,7 +339,6 @@ static void omap4_enter_idle_primary(struct omap4_processor_cx *cx)
 	omap_set_pwrdm_state(mpu_pd, PWRDM_POWER_ON);
 	omap_set_pwrdm_state(core_pd, PWRDM_POWER_ON);
 
-wake_cpu1:
 	if (!cpu_is_offline(1)) {
 		/*
 		 * Work around a ROM bug that causes CPU1 to corrupt the
@@ -358,7 +359,7 @@ wake_cpu1:
 		 * cpu1 mucks with page tables while it is starting,
 		 * prevent cpu0 executing any processes until cpu1 is up
 		 */
-		while (omap4_idle_requested_cx[1])
+		while (omap4_idle_requested_cx[1] && omap4_idle_ready_count)
 			cpu_relax();
 	}
 
@@ -580,6 +581,9 @@ static int omap4_enter_idle(struct cpuidle_device *dev,
 		omap4_idle_ready_count = 0;
 		omap4_cpu_update_state(cpu, NULL);
 		spin_unlock(&omap4_idle_lock);
+
+		while (omap4_idle_requested_cx[0])
+			cpu_relax();
 
 		clkdm_allow_idle(cpu1_cd);
 

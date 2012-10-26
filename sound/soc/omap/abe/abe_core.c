@@ -132,8 +132,11 @@ EXPORT_SYMBOL(omap_abe_reset_hal);
 int omap_abe_wakeup(struct omap_abe *abe)
 {
 	/* Restart event generator */
+#ifdef CONFIG_ABE_44100
+	omap_abe_write_event_generator(abe, EVENT_44100);
+#else
 	omap_abe_write_event_generator(abe, EVENT_TIMER);
-
+#endif
 	/* reconfigure DMA Req and MCU Irq visibility */
 	omap_abe_hw_configuration(abe);
 	return 0;
@@ -257,7 +260,6 @@ int omap_abe_set_ping_pong_buffer(struct omap_abe *abe, u32 port, u32 n_bytes)
 
 	base_and_size = abe->pp_buf_addr[abe->pp_buf_id_next];
 	abe->pp_buf_id_next = (abe->pp_buf_id_next + 1) & 0x03;
-
 	base_and_size = (base_and_size & 0xFFFFL) + (n_samples << 16);
 	sio_pp_desc_address = OMAP_ABE_D_PINGPONGDESC_ADDR + struct_offset;
 	src = &base_and_size;
@@ -384,6 +386,7 @@ int omap_abe_read_offset_from_ping_buffer(struct omap_abe *abe,
 			/* the next is buffer0, hence the current is buffer1 */
 			*n = desc_pp.nextbuff1_Samples -
 				desc_pp.workbuff_Samples;
+
 		} else {
 			/* the next is buffer1, hence the current is buffer0 */
 			*n = desc_pp.nextbuff0_Samples -
@@ -462,9 +465,11 @@ EXPORT_SYMBOL(omap_abe_set_router_configuration);
  */
 int omap_abe_set_opp_processing(struct omap_abe *abe, u32 opp)
 {
-	u32 dOppMode32, sio_desc_address;
+	u32 dOppMode32;
+#if 0
+	u32 sio_desc_address;
 	struct ABE_SIODescriptor sio_desc;
-
+#endif
 	_log(ABE_ID_SET_OPP_PROCESSING, opp, 0, 0);
 
 	switch (opp) {

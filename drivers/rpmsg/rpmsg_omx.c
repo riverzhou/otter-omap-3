@@ -111,8 +111,15 @@ static LIST_HEAD(rpmsg_omx_services_list);
  */
 #define TILER_START	0x60000000
 #define TILER_END	0x80000000
-#define ION_1D_START	0xBA300000
-#define ION_1D_END	0xBFD00000
+#ifdef CONFIG_OTTER
+#define ION_1D_START    0x9FC00000
+#define ION_1D_END      0x9FD00000
+#else
+/*Reducing the memory from 90MB to 10MB*/
+#define ION_1D_START    0xBF300000
+#define ION_1D_END  0xBFD00000
+#endif
+
 #define ION_1D_VA	0x88000000
 static u32 _rpmsg_pa_to_da(u32 pa)
 {
@@ -245,7 +252,7 @@ static void rpmsg_omx_cb(struct rpmsg_channel *rpdev, void *data, int len,
 			break;
 		}
 		rsp = (struct omx_conn_rsp *) hdr->data;
-		dev_info(&rpdev->dev, "conn rsp: status %d addr %d\n",
+		dev_dbg(&rpdev->dev, "conn rsp: status %d addr %d\n",
 			       rsp->status, rsp->addr);
 		omx->dst = rsp->addr;
 		if (rsp->status)
@@ -443,7 +450,7 @@ static int rpmsg_omx_open(struct inode *inode, struct file *filp)
 	list_add(&omx->next, &omxserv->list);
 	mutex_unlock(&omxserv->lock);
 
-	dev_info(omxserv->dev, "local addr assigned: 0x%x\n", omx->ept->addr);
+	dev_dbg(omxserv->dev, "local addr assigned: 0x%x\n", omx->ept->addr);
 
 	return 0;
 }
@@ -472,7 +479,7 @@ static int rpmsg_omx_release(struct inode *inode, struct file *filp)
 	disc_req->addr = omx->dst;
 	use = sizeof(*hdr) + hdr->len;
 
-	dev_info(omxserv->dev, "Disconnecting from OMX service at %d\n",
+	dev_dbg(omxserv->dev, "Disconnecting from OMX service at %d\n",
 		omx->dst);
 
 	/* send the msg to the remote OMX connection service */

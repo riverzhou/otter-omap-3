@@ -67,6 +67,7 @@ static IMG_VOID SGXPostActivePowerEvent(PVRSRV_DEVICE_NODE	* psDeviceNode,
 
 	if ((psSGXHostCtl->ui32PowerStatus & PVRSRV_USSE_EDM_POWMAN_POWEROFF_RESTART_IMMEDIATE) != 0)
 	{
+		PVR_DPF((PVR_DBG_WARNING, "SGXPostActivePowerEvent: SGX requests immediate restart"));
 		
 
 
@@ -104,10 +105,37 @@ IMG_VOID SGXTestActivePowerEvent (PVRSRV_DEVICE_NODE	*psDeviceNode,
 	}
 #endif 
 
-	if (((psSGXHostCtl->ui32InterruptFlags & PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER) != 0) &&
-		((psSGXHostCtl->ui32InterruptClearFlags & PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER) == 0))
+	/**
+	 * Quickly check (without lock) if there is an APM event we should handle.
+	 * This check fails most of the time so we don't want to incur lock overhead.
+	 * Check the flags in the reverse order that microkernel clears them to prevent
+	 * us from seeing an inconsistent state.
+	*/
+	if (((psSGXHostCtl->ui32InterruptClearFlags & PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER) == 0) &&
+		((psSGXHostCtl->ui32InterruptFlags & PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER) != 0))
 	{
 		
+		eError = PVRSRVPowerLock(ui32CallerID, IMG_FALSE);
+		if (eError == PVRSRV_ERROR_RETRY)
+			return;
+		if (eError != PVRSRV_OK)
+		{
+			PVR_DPF((PVR_DBG_ERROR,"SGXTestActivePowerEvent failed to acquire lock - "
+					 "ui32CallerID:%d eError:%u", ui32CallerID, eError));
+			return;
+		}
+
+		/**
+		 * Check again (with lock) if APM event has been cleared or handled. A race
+		 * condition may allow multiple threads to pass the quick check.
+		*/
+		if (((psSGXHostCtl->ui32InterruptClearFlags & PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER) != 0) ||
+			((psSGXHostCtl->ui32InterruptFlags & PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER) == 0))
+		{
+			PVRSRVPowerUnlock(ui32CallerID);
+			return;
+		}
+
 		psSGXHostCtl->ui32InterruptClearFlags |= PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER;
 
 		
@@ -120,20 +148,14 @@ IMG_VOID SGXTestActivePowerEvent (PVRSRV_DEVICE_NODE	*psDeviceNode,
 		eError = SysPowerDownMISR(psDeviceNode, ui32CallerID);
 #else
 		eError = PVRSRVSetDevicePowerStateKM(psDeviceNode->sDevId.ui32DeviceIndex,
-											 PVRSRV_DEV_POWER_STATE_OFF,
-											 ui32CallerID, IMG_FALSE);
+											 PVRSRV_DEV_POWER_STATE_OFF);
 		if (eError == PVRSRV_OK)
 		{
 			SGXPostActivePowerEvent(psDeviceNode, ui32CallerID);
 		}
 #endif
-		if (eError == PVRSRV_ERROR_RETRY)
-		{
-			
+		PVRSRVPowerUnlock(ui32CallerID);
 
-			psSGXHostCtl->ui32InterruptClearFlags &= ~PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER;
-			eError = PVRSRV_OK;
-		}
 
 		
 		PDUMPRESUME();
@@ -177,6 +199,7 @@ PVRSRV_ERROR SGXScheduleCCBCommand(PVRSRV_DEVICE_NODE	*psDeviceNode,
 	PVRSRV_ERROR eError = PVRSRV_OK;
 	SGXMKIF_COMMAND *psSGXCommand;
 	PVRSRV_SGXDEV_INFO 	*psDevInfo = psDeviceNode->pvDevice;
+	SGXMKIF_HOST_CTL	*psSGXHostCtl = psDevInfo->psSGXHostCtl;
 #if defined(FIX_HW_BRN_31620)
 	IMG_UINT32 ui32CacheMasks[4];
 	IMG_UINT32 i;
@@ -499,6 +522,13 @@ PVRSRV_ERROR SGXScheduleCCBCommand(PVRSRV_DEVICE_NODE	*psDeviceNode,
 
 	*psDevInfo->pui32KernelCCBEventKicker = (*psDevInfo->pui32KernelCCBEventKicker + 1) & 0xFF;
 
+	/**
+	 * New command submission is considered a proper handling of any pending APM
+	 * event, so mark it as handled to prevent other host threads from taking
+	 * action.
+	*/
+	psSGXHostCtl->ui32InterruptClearFlags |= PVRSRV_USSE_EDM_INTERRUPT_ACTIVE_POWER;
+
 	OSWriteMemoryBarrier();
 
 	
@@ -541,15 +571,32 @@ PVRSRV_ERROR SGXScheduleCCBCommandKM(PVRSRV_DEVICE_NODE		*psDeviceNode,
 									 IMG_BOOL				bLastInScene)
 {
 	PVRSRV_ERROR		eError;
-
+        SYS_DATA                *psSysData;
 	
 	PDUMPSUSPEND();
 
 	
+	eError = PVRSRVPowerLock(ui32CallerID, IMG_FALSE);
+	if (eError == PVRSRV_ERROR_RETRY)
+	{
+		if (ui32CallerID == ISR_ID)
+		{
+			psDeviceNode->bReProcessDeviceCommandComplete = IMG_TRUE;
+                        SysAcquireData(&psSysData);
+                        OSScheduleMISR((IMG_VOID *)psSysData);
+			return PVRSRV_OK;
+		}
+		return eError;
+	}
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,"SGXScheduleCCBCommandKM failed to acquire lock - "
+				"ui32CallerID:%d eError:%u", ui32CallerID, eError));
+		return eError;
+	}
+
 	eError = PVRSRVSetDevicePowerStateKM(psDeviceNode->sDevId.ui32DeviceIndex,
-										 PVRSRV_DEV_POWER_STATE_ON,
-										 ui32CallerID,
-										 IMG_TRUE);
+						PVRSRV_DEV_POWER_STATE_ON);
 
 	PDUMPRESUME();
 
@@ -559,28 +606,9 @@ PVRSRV_ERROR SGXScheduleCCBCommandKM(PVRSRV_DEVICE_NODE		*psDeviceNode,
 	}
 	else
 	{
-		if (eError == PVRSRV_ERROR_RETRY)
-		{
-			if (ui32CallerID == ISR_ID)
-			{
-				
-
-
-				psDeviceNode->bReProcessDeviceCommandComplete = IMG_TRUE;
-				eError = PVRSRV_OK;
-			}
-			else
-			{
-				
-
-			}
-		}
-		else
-		{
-			PVR_DPF((PVR_DBG_ERROR,"SGXScheduleCCBCommandKM failed to acquire lock - "
-					 "ui32CallerID:%d eError:%u", ui32CallerID, eError));
-		}
-
+		PVRSRVPowerUnlock(ui32CallerID);
+		PVR_DPF((PVR_DBG_ERROR,"SGXScheduleCCBCommandKM failed to set power state - "
+				 "ui32CallerID:%d eError:%u", ui32CallerID, eError));
 		return eError;
 	}
 
@@ -704,8 +732,20 @@ PVRSRV_ERROR SGXCleanupRequest(PVRSRV_DEVICE_NODE *psDeviceNode,
 			return eError;
 		}
 	}
-	
-	psHostCtl->ui32CleanupStatus &= ~(PVRSRV_USSE_EDM_CLEANUPCMD_COMPLETE);
+
+	if (psHostCtl->ui32CleanupStatus & PVRSRV_USSE_EDM_CLEANUPCMD_BUSY)
+	{
+		/* Only one flag should be set */
+		PVR_ASSERT((psHostCtl->ui32CleanupStatus & PVRSRV_USSE_EDM_CLEANUPCMD_DONE) == 0);
+		eError = PVRSRV_ERROR_RETRY;
+		psHostCtl->ui32CleanupStatus &= ~(PVRSRV_USSE_EDM_CLEANUPCMD_COMPLETE | PVRSRV_USSE_EDM_CLEANUPCMD_BUSY);
+	}
+	else
+	{
+		eError = PVRSRV_OK;
+		psHostCtl->ui32CleanupStatus &= ~(PVRSRV_USSE_EDM_CLEANUPCMD_COMPLETE | PVRSRV_USSE_EDM_CLEANUPCMD_DONE);
+	}
+
 	PDUMPMEM(IMG_NULL, psHostCtlMemInfo, offsetof(SGXMKIF_HOST_CTL, ui32CleanupStatus), sizeof(IMG_UINT32), 0, MAKEUNIQUETAG(psHostCtlMemInfo));
 
 	
@@ -714,7 +754,7 @@ PVRSRV_ERROR SGXCleanupRequest(PVRSRV_DEVICE_NODE *psDeviceNode,
 #else
 	psDevInfo->ui32CacheControl |= SGXMKIF_CC_INVAL_DATA;
 #endif
-	return PVRSRV_OK;
+	return eError;
 }
 
 
@@ -741,12 +781,15 @@ static PVRSRV_ERROR SGXCleanupHWRenderContextCallback(IMG_PVOID		pvParam,
 					  PVRSRV_CLEANUPCMD_RC,
 					  bForceCleanup);
 
-	OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP,
-			  sizeof(SGX_HW_RENDER_CONTEXT_CLEANUP),
-			  psCleanup,
-			  psCleanup->hBlockAlloc);
-	
-
+        if (eError != PVRSRV_ERROR_RETRY)
+        {
+            /* Finally, free the cleanup structure itself */
+            OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP,
+                                sizeof(SGX_HW_RENDER_CONTEXT_CLEANUP),
+                                psCleanup,
+                                psCleanup->hBlockAlloc);
+            /*not nulling pointer, copy on stack*/
+        }
 	return eError;
 }
 
@@ -773,12 +816,15 @@ static PVRSRV_ERROR SGXCleanupHWTransferContextCallback(IMG_PVOID	pvParam,
 					  PVRSRV_CLEANUPCMD_TC,
 					  bForceCleanup);
 
-	OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP,
-			  sizeof(SGX_HW_TRANSFER_CONTEXT_CLEANUP),
-			  psCleanup,
-			  psCleanup->hBlockAlloc);
-	
-
+        if (eError != PVRSRV_ERROR_RETRY)
+        {
+            /* Finally, free the cleanup structure itself */
+            OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP,
+                                sizeof(SGX_HW_TRANSFER_CONTEXT_CLEANUP),
+                                psCleanup,
+                                psCleanup->hBlockAlloc);
+            /*not nulling pointer, copy on stack*/
+        }
 	return eError;
 }
 
@@ -946,11 +992,15 @@ static PVRSRV_ERROR SGXCleanupHW2DContextCallback(IMG_PVOID  pvParam,
 					  PVRSRV_CLEANUPCMD_2DC,
 					  bForceCleanup);
 
-	OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP,
-			  sizeof(SGX_HW_2D_CONTEXT_CLEANUP),
-			  psCleanup,
-			  psCleanup->hBlockAlloc);
-	
+        if (eError != PVRSRV_ERROR_RETRY)
+        {
+            /* Finally, free the cleanup structure itself */
+            OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP,
+                                sizeof(SGX_HW_2D_CONTEXT_CLEANUP),
+                                psCleanup,
+                                psCleanup->hBlockAlloc);
+            /*not nulling pointer, copy on stack*/
+        }
 
 	return eError;
 }

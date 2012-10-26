@@ -359,8 +359,15 @@ CFLAGS_GCOV	= -fprofile-arcs -ftest-coverage
 # Needed to be compatible with the O= option
 LINUXINCLUDE    := -I$(srctree)/arch/$(hdr-arch)/include \
                    -Iarch/$(hdr-arch)/include/generated -Iinclude \
+                   $(TRAPZ_INCLUDE) \
                    $(if $(KBUILD_SRC), -I$(srctree)/include) \
                    -include include/generated/autoconf.h
+
+# TRAPZ
+ifeq ($(USE_TRAPZ),true)
+CFLAGS_KERNEL += -DENABLE_TRAPZ
+CFLAGS_MODULE += -DENABLE_TRAPZ
+endif
 
 KBUILD_CPPFLAGS := -D__KERNEL__
 
@@ -596,6 +603,13 @@ ifdef CONFIG_DEBUG_INFO
 KBUILD_CFLAGS	+= -g
 KBUILD_AFLAGS	+= -gdwarf-2
 endif
+
+ifeq ($(SUPPORT_PLATFORM),otter)
+KBUILD_CFLAGS += -DCONFIG_OTTER
+else
+KBUILD_CFLAGS += -DCONFIG_OTTER2
+endif
+
 
 ifdef CONFIG_DEBUG_INFO_REDUCED
 KBUILD_CFLAGS 	+= $(call cc-option, -femit-struct-debug-baseonly)

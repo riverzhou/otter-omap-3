@@ -58,3 +58,12 @@ config TF_DRIVER_FAULT_INJECTION
 	  driver to fail.
 
 	  If you are unsure how to answer this question, answer Y.
+
+config TF_CRYPTO_RNG
+	tristate "Use OMAP4 HW RNG"
+	depends on m
+	select SECURITY_MIDDLEWARE_COMPONENT
+	help
+	  This option enables OMAP4 HW RNG support.
+
+	  If you are unsure how to answer this question, answer N.

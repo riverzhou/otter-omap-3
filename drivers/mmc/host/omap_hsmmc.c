@@ -42,6 +42,7 @@
 #include <plat/mmc.h>
 #include <plat/cpu.h>
 #include <plat/omap-pm.h>
+#include <linux/trapz.h>
 
 /* OMAP HSMMC Host Controller Registers */
 #define OMAP_HSMMC_SYSCONFIG	0x0010
@@ -125,9 +126,9 @@
 #define ADMA_ERR		(1 << 25)
 #define ADMA_XFER_INT		(1 << 3)
 
-#define ADMA_TABLE_SZ (PAGE_SIZE)
-#define ADMA_TABLE_NUM_ENTRIES \
-	(ADMA_TABLE_SZ / sizeof(struct adma_desc_table))
+#define DMA_TABLE_NUM_ENTRIES	1024
+#define ADMA_TABLE_SZ 	\
+	(DMA_TABLE_NUM_ENTRIES * sizeof(struct adma_desc_table))
 
 #define SDMA_XFER	1
 #define ADMA_XFER	2
@@ -138,7 +139,8 @@
  * using a 16bit integer in 1 ADMA table row.
  * Hence rounding it to a lesser value.
  */
-#define ADMA_MAX_XFER_PER_ROW (60 * 1024)
+#define ADMA_MAX_XFER_PER_ROW (63 * 1024)
+#define ADMA_MAX_BLKS_PER_ROW (ADMA_MAX_XFER_PER_ROW / 512)
 
 
 #define AUTO_CMD12		(1 << 0)	/* Auto CMD12 support */
@@ -232,6 +234,7 @@ struct omap_hsmmc_host {
 	unsigned int		flags;
 
 	struct	omap_mmc_platform_data	*pdata;
+	int			shutdown;
 };
 
 static void omap_hsmmc_status_notify_cb(int card_present, void *dev_id)
@@ -884,6 +887,11 @@ omap_hsmmc_start_command(struct omap_hsmmc_host *host, struct mmc_command *cmd,
 {
 	int cmdreg = 0, resptype = 0, cmdtype = 0;
 
+	TRAPZ_DESCRIBE(TRAPZ_KERN_MMC, omap_hsmmc_start_command,
+		       "MMC start device command");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_MMC,
+			 omap_hsmmc_start_command,
+			 "CMD%d; argument=0x%08x", cmd->opcode, cmd->arg);
 	dev_dbg(mmc_dev(host->mmc), "%s: CMD%d, argument 0x%08x\n",
 		mmc_hostname(host->mmc), cmd->opcode, cmd->arg);
 	host->cmd = cmd;
@@ -1151,6 +1159,11 @@ static void omap_hsmmc_do_irq(struct omap_hsmmc_host *host, int status)
 
 	data = host->data;
 	dev_dbg(mmc_dev(host->mmc), "IRQ Status is %x\n", status);
+	TRAPZ_DESCRIBE(TRAPZ_KERN_MMC, omap_hsmmc_do_irq,
+		       "MMC interrupt");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_MMC,
+			 omap_hsmmc_do_irq,
+			 "Status %x", status, 0);
 
 	if (status & ERR) {
 #ifdef CONFIG_MMC_DEBUG
@@ -1562,6 +1575,7 @@ static int mmc_populate_adma_desc_table(struct omap_hsmmc_host *host,
 				ADMA_XFER_VALID);
 
 		} else {
+			//dev_err(mmc_dev(host->mmc), "unexpected dmalen %d\n", dmalen);
 			/* Each descritpor row can only support
 			 * transfer upto ADMA_MAX_XFER_PER_ROW.
 			 * If the current segment is bigger, it has to be
@@ -1584,10 +1598,17 @@ static int mmc_populate_adma_desc_table(struct omap_hsmmc_host *host,
 	}
 	/* Setup last entry to terminate */
 	pdesc[i + j - 1].attr |= ADMA_XFER_END;
-	WARN_ON((i + j - 1) > ADMA_TABLE_NUM_ENTRIES);
+	WARN_ON((i + j - 1) > DMA_TABLE_NUM_ENTRIES);
 	dev_dbg(mmc_dev(host->mmc),
 		"ADMA table has %d entries from %d sglist\n",
 		i + j, host->dma_len);
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_MMC,  mmc_populate_adma_desc_table,
+		       "MMC Descriptor table populated");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_MMC,
+			 mmc_populate_adma_desc_table,
+			 "ADMA table has %d entries from %d sglist\n",
+			 i + j, host->dma_len);
 	return numblocks;
 }
 
@@ -1685,6 +1706,16 @@ static void omap_hsmmc_request(struct mmc_host *mmc, struct mmc_request *req)
 
 	BUG_ON(host->req_in_progress);
 	BUG_ON(host->dma_ch != -1);
+
+	if (host->shutdown) {
+		req->cmd->error = EIO;
+		if (req->data)
+			req->data->error = -EIO;
+		dev_warn(mmc_dev(host->mmc),
+		"Card is no longer present\n");
+		mmc_request_done(mmc, req);
+		}
+
 	if (host->protect_card) {
 		if (host->reqs_blocked < 3) {
 			/*
@@ -2296,6 +2327,7 @@ static int __init omap_hsmmc_probe(struct platform_device *pdev)
 	}
 	host->power_mode = MMC_POWER_OFF;
 	host->flags	= AUTO_CMD12;
+	host->shutdown = 0;
 
 	host->master_clock = OMAP_MMC_MASTER_CLOCK;
 	if (mmc_slot(host).features & HSMMC_HAS_48MHZ_MASTER_CLK)
@@ -2385,11 +2417,31 @@ static int __init omap_hsmmc_probe(struct platform_device *pdev)
 
 	/* Since we do only SG emulation, we can have as many segs
 	 * as we want. */
-	mmc->max_segs = 1024;
+//	mmc->max_segs = DMA_TABLE_NUM_ENTRIES;
 
-	mmc->max_blk_size = 512;       /* Block Length at max can be 1024 */
-	mmc->max_blk_count = 0xFFFF;    /* No. of Blocks is 16 bits */
-	mmc->max_req_size = mmc->max_blk_size * mmc->max_blk_count;
+	if (host->dma_type == ADMA_XFER) {
+/* Worst case is when above block layer gives us 512 segments,
++                 * in which there are 511 single block entries, but one large
++                 * block that is of size mmc->max_req_size - (511*512) bytes.
++                 * In this case, we use the reserved 512 table entries to
++                 * break up the large request. This is also the reason why we
++                 * say we can only handle DMA_TABLE_NUM_ENTRIES/2
++                 * segments instead of DMA_TABLE_NUM_ENTRIES.
++                 */
+                mmc->max_segs = DMA_TABLE_NUM_ENTRIES/2;
+		mmc->max_blk_size = 512;       /* Block Length at max can be 1024 */
+//		mmc->max_blk_count = 120;      /* ADMA Block size is 16 bits wide */
+//		mmc->max_req_size = mmc->max_blk_size * mmc->max_blk_count
+//					* DMA_TABLE_NUM_ENTRIES;
+                mmc->max_blk_count = ADMA_MAX_BLKS_PER_ROW *
+                                                        DMA_TABLE_NUM_ENTRIES/2;
+                mmc->max_req_size = mmc->max_blk_size * mmc->max_blk_count;
+	} else {
+		mmc->max_segs = DMA_TABLE_NUM_ENTRIES;
+		mmc->max_blk_size = 512;       /* Block Length at max can be 1024 */
+		mmc->max_blk_count = 0xFFFF;    /* No. of Blocks is 16 bits */
+		mmc->max_req_size = mmc->max_blk_size * mmc->max_blk_count;
+	}
 	mmc->max_seg_size = mmc->max_req_size;
 
 	mmc->caps |= MMC_CAP_MMC_HIGHSPEED | MMC_CAP_SD_HIGHSPEED |
@@ -2571,6 +2623,15 @@ static int omap_hsmmc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int omap_hsmmc_shutdown(struct platform_device *pdev)
+{
+	struct omap_hsmmc_host *host = platform_get_drvdata(pdev);
+
+	/* Disable mmc interrupts on shutdown of driver */
+	if (host)
+		free_irq(host->irq, host);
+}
+
 #ifdef CONFIG_PM
 static int omap_hsmmc_suspend(struct device *dev)
 {
@@ -2603,7 +2664,7 @@ static int omap_hsmmc_suspend(struct device *dev)
 			omap_hsmmc_disable_irq(host);
 			OMAP_HSMMC_WRITE(host->base, HCTL,
 				OMAP_HSMMC_READ(host->base, HCTL) & ~SDBP);
-			mmc_host_disable(host->mmc);
+			pm_runtime_put_sync(host->dev);
 
 			if (host->got_dbclk)
 				clk_disable(host->dbclk);
@@ -2633,9 +2694,8 @@ static int omap_hsmmc_resume(struct device *dev)
 		return 0;
 
 	if (host) {
-		if (mmc_host_enable(host->mmc) != 0) {
+		if (pm_runtime_get_sync(host->dev))
 			goto clk_en_err;
-		}
 
 		if (host->got_dbclk)
 			clk_enable(host->dbclk);
@@ -2698,7 +2758,6 @@ static int omap_hsmmc_runtime_resume(struct device *dev)
 	return 0;
 }
 
-
 static struct dev_pm_ops omap_hsmmc_dev_pm_ops = {
 	.suspend	= omap_hsmmc_suspend,
 	.resume		= omap_hsmmc_resume,
@@ -2708,6 +2767,7 @@ static struct dev_pm_ops omap_hsmmc_dev_pm_ops = {
 
 static struct platform_driver omap_hsmmc_driver = {
 	.remove		= omap_hsmmc_remove,
+	.shutdown	= omap_hsmmc_shutdown,
 	.driver		= {
 		.name = DRIVER_NAME,
 		.owner = THIS_MODULE,

@@ -51,14 +51,12 @@
 
 #include <linux/thermal_framework.h>
 
-#define REPORT_DELAY_MS	1000
-
 /* This DEBUG flag is used to enable the sysfs entries
  * for the thermal shutdown thresholds, uncomment #define
  * for testing tshut mechanism
  */
 
-/* #define TSHUT_DEBUG	1 */
+/*#define TSHUT_DEBUG	1 */
 #define TEMP_DEBUG 1
 
 #define TSHUT_THRESHOLD_TSHUT_HOT	100000	/* 100 deg C */
@@ -67,6 +65,7 @@
 #define BGAP_THRESHOLD_T_COLD		71000	/* 71 deg C */
 #define OMAP_ADC_START_VALUE	530
 #define OMAP_ADC_END_VALUE	932
+#define OMAP_MIN_TEMP			-40000	/* sensor starts at -40 deg C */
 
 /*
  * omap_temp_sensor structure
@@ -80,6 +79,7 @@
  * @is_efuse_valid - Flag to determine if eFuse is valid or not
  * @clk_on - Manages the current clock state
  * @clk_rate - Holds current clock rate
+ * @context_saved - Flag to determine if context was saved
  */
 struct omap_temp_sensor {
 	struct platform_device *pdev;
@@ -94,10 +94,9 @@ struct omap_temp_sensor {
 	int is_efuse_valid;
 	u8 clk_on;
 	u32 clk_rate;
-	struct delayed_work omap_sensor_work;
-	int work_delay;
 	int debug;
 	int debug_temp;
+	bool context_saved;
 };
 
 #ifdef CONFIG_PM
@@ -106,7 +105,7 @@ struct omap_temp_sensor_regs {
 	u32 bg_ctrl;
 	u32 bg_counter;
 	u32 bg_threshold;
-	u32 temp_sensor_tshut_threshold;
+	u32 tshut_threshold;
 };
 
 static struct omap_temp_sensor_regs temp_sensor_context;
@@ -238,9 +237,6 @@ static int omap_report_temp(struct thermal_dev *tdev)
 		if (ret == -ENODEV)
 			pr_err("%s:thermal_sensor_set_temp reports error\n",
 				__func__);
-		else
-			cancel_delayed_work_sync(
-				&temp_sensor->omap_sensor_work);
 		kobject_uevent(&temp_sensor->dev->kobj, KOBJ_CHANGE);
 	}
 
@@ -307,9 +303,10 @@ static int omap_set_thresholds(struct omap_temp_sensor *temp_sensor,
 	int new_hot;
 	int curr_temp = 0;
 
-	/* A negative value is not acceptable for the thresholds */
-	if ((min < 0) || (max < 0)) {
-		pr_err("%s:Min or Max is invalid\n", __func__);
+	/* A too low value is not acceptable for the thresholds */
+	if ((min < OMAP_MIN_TEMP) || (max < OMAP_MIN_TEMP)) {
+		pr_err("%s:Min or Max is invalid %d %d\n", __func__,
+			min, max);
 		return -EINVAL;
 	}
 
@@ -498,6 +495,28 @@ out:
 	return count;
 }
 
+static ssize_t show_hotspot_temp(struct device *dev,
+			struct device_attribute *devattr,
+			char *buf)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct omap_temp_sensor *temp_sensor = platform_get_drvdata(pdev);
+
+	return sprintf(buf, "%d\n",
+		thermal_sensor_get_hotspot_temp(temp_sensor->therm_fw));
+}
+
+static ssize_t show_avg_temp(struct device *dev,
+			struct device_attribute *devattr,
+			char *buf)
+{
+	struct platform_device *pdev = to_platform_device(dev);
+	struct omap_temp_sensor *temp_sensor = platform_get_drvdata(pdev);
+
+	return sprintf(buf, "avg temp%d\n",
+		thermal_sensor_get_avg_temp(temp_sensor->therm_fw));
+}
+
 static int omap_temp_sensor_read_temp(struct device *dev,
 				      struct device_attribute *devattr,
 				      char *buf)
@@ -681,6 +700,10 @@ static DEVICE_ATTR(temp_thresh, S_IWUSR | S_IRUGO, show_temp_thresholds,
 			  set_temp_thresholds);
 static DEVICE_ATTR(update_rate, S_IWUSR | S_IRUGO, show_update_rate,
 			  set_update_rate);
+static DEVICE_ATTR(hotspot_temp, S_IRUGO, show_hotspot_temp,
+			  NULL);
+static DEVICE_ATTR(avg_temp1_input, S_IRUGO, show_avg_temp,
+			  NULL);
 
 static struct attribute *omap_temp_sensor_attributes[] = {
 	&dev_attr_temp1_input.attr,
@@ -693,6 +716,8 @@ static struct attribute *omap_temp_sensor_attributes[] = {
 	&dev_attr_debug_user.attr,
 #endif
 	&dev_attr_update_rate.attr,
+	&dev_attr_hotspot_temp.attr,
+	&dev_attr_avg_temp1_input.attr,
 	NULL
 };
 
@@ -767,6 +792,8 @@ static int omap_temp_sensor_disable(struct omap_temp_sensor *temp_sensor)
 	while ((temp & OMAP4_CLEAN_STOP_MASK) && --counter)
 		temp = omap_temp_sensor_readl(temp_sensor,
 						BGAP_STATUS_OFFSET);
+	if (counter == 0)
+		pr_err("%s:timeout counter for clean stop expired\n", __func__);
 	/* Gate the clock */
 	ret = pm_runtime_put_sync_suspend(&temp_sensor->pdev->dev);
 	if (ret) {
@@ -791,7 +818,7 @@ static irqreturn_t omap_tshut_irq_handler(int irq, void *data)
 	if (temp_sensor->is_efuse_valid) {
 		pr_emerg("%s: Thermal shutdown reached rebooting device\n",
 			__func__);
-		kernel_restart(NULL);
+		orderly_poweroff(true);
 	} else {
 		pr_err("%s:Invalid EFUSE, Non-trimmed BGAP\n", __func__);
 	}
@@ -803,6 +830,9 @@ static irqreturn_t omap_talert_irq_handler(int irq, void *data)
 {
 	struct omap_temp_sensor *temp_sensor = (struct omap_temp_sensor *)data;
 	int t_hot, t_cold, temp_offset, temp;
+	char env_temp[20];
+	char env_zone[20];
+        char *envp[] = { env_temp, env_zone, NULL };
 
 	t_hot = omap_temp_sensor_readl(temp_sensor, BGAP_STATUS_OFFSET)
 	    & OMAP4_HOT_FLAG_MASK;
@@ -827,12 +857,14 @@ static irqreturn_t omap_talert_irq_handler(int irq, void *data)
 	/* look up for temperature in the table and return the
 	   temperature */
 	if (temp < OMAP_ADC_START_VALUE || temp > OMAP_ADC_END_VALUE) {
-		pr_err("invalid adc code reported by the sensor %d", temp);
+		pr_err("invalid adc code reported by the sensor %d\n", temp);
 	} else {
 		temp_sensor->therm_fw->current_temp =
 				adc_to_temp[temp - OMAP_ADC_START_VALUE];
 		thermal_sensor_set_temp(temp_sensor->therm_fw);
-		kobject_uevent(&temp_sensor->dev->kobj, KOBJ_CHANGE);
+		snprintf(envp[0], 20, "TEMP=%d",thermal_sensor_get_hotspot_temp(temp_sensor->therm_fw)/1000);
+		snprintf(envp[1], 20, "ZONE=%d",thermal_sensor_get_zone(temp_sensor->therm_fw));
+		kobject_uevent_env(&temp_sensor->dev->kobj, KOBJ_CHANGE, envp);
 	}
 
 	return IRQ_HANDLED;
@@ -843,17 +875,6 @@ static struct thermal_dev_ops omap_sensor_ops = {
 	.set_temp_thresh = omap_set_temp_thresh,
 	.set_temp_report_rate = omap_set_measuring_rate,
 };
-
-static void omap_sensor_delayed_work_fn(struct work_struct *work)
-{
-	struct omap_temp_sensor *temp_sensor =
-				container_of(work, struct omap_temp_sensor,
-					     omap_sensor_work.work);
-
-	omap_report_temp(temp_sensor->therm_fw);
-	schedule_delayed_work(&temp_sensor->omap_sensor_work,
-				msecs_to_jiffies(temp_sensor->work_delay));
-}
 
 static int __devinit omap_temp_sensor_probe(struct platform_device *pdev)
 {
@@ -871,10 +892,6 @@ static int __devinit omap_temp_sensor_probe(struct platform_device *pdev)
 	temp_sensor = kzalloc(sizeof(struct omap_temp_sensor), GFP_KERNEL);
 	if (!temp_sensor)
 		return -ENOMEM;
-
-	/* Init delayed work for PCB sensor temperature */
-	INIT_DELAYED_WORK(&temp_sensor->omap_sensor_work,
-			  omap_sensor_delayed_work_fn);
 
 	spin_lock_init(&temp_sensor->lock);
 	mutex_init(&temp_sensor->sensor_mutex);
@@ -969,9 +986,9 @@ static int __devinit omap_temp_sensor_probe(struct platform_device *pdev)
 	/* Read the temperature once due to hw issue*/
 	omap_report_temp(temp_sensor->therm_fw);
 
-	/* Set 2 seconds time as default counter */
+	/* Set 250 milli-seconds time as default counter */
 	omap_configure_temp_sensor_counter(temp_sensor,
-						temp_sensor->clk_rate * 2);
+					temp_sensor->clk_rate * 250 / 1000);
 	ret = sysfs_create_group(&pdev->dev.kobj,
 				 &omap_temp_sensor_group);
 	if (ret) {
@@ -981,7 +998,7 @@ static int __devinit omap_temp_sensor_probe(struct platform_device *pdev)
 
 	ret = request_threaded_irq(temp_sensor->irq, NULL,
 			omap_talert_irq_handler,
-			IRQF_TRIGGER_RISING | IRQF_ONESHOT,
+			IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
 			"temp_sensor", (void *)temp_sensor);
 	if (ret) {
 		dev_err(&pdev->dev, "Request threaded irq failed.\n");
@@ -1002,10 +1019,6 @@ static int __devinit omap_temp_sensor_probe(struct platform_device *pdev)
 	val |= OMAP4_MASK_COLD_MASK;
 	val |= OMAP4_MASK_HOT_MASK;
 	omap_temp_sensor_writel(temp_sensor, val, BGAP_CTRL_OFFSET);
-
-	temp_sensor->work_delay = REPORT_DELAY_MS;
-	schedule_delayed_work(&temp_sensor->omap_sensor_work,
-			msecs_to_jiffies(0));
 
 	dev_info(&pdev->dev, "%s : '%s'\n", temp_sensor->therm_fw->name,
 			pdata->name);
@@ -1048,7 +1061,6 @@ static int __devexit omap_temp_sensor_remove(struct platform_device *pdev)
 	kfree(temp_sensor->therm_fw);
 	kobject_uevent(&temp_sensor->dev->kobj, KOBJ_REMOVE);
 	sysfs_remove_group(&temp_sensor->dev->kobj, &omap_temp_sensor_group);
-	cancel_delayed_work_sync(&temp_sensor->omap_sensor_work);
 	omap_temp_sensor_disable(temp_sensor);
 	if (temp_sensor->clock)
 		clk_put(temp_sensor->clock);
@@ -1074,27 +1086,98 @@ static void omap_temp_sensor_save_ctxt(struct omap_temp_sensor *temp_sensor)
 	    omap_temp_sensor_readl(temp_sensor, BGAP_COUNTER_OFFSET);
 	temp_sensor_context.bg_threshold =
 	    omap_temp_sensor_readl(temp_sensor, BGAP_THRESHOLD_OFFSET);
-	temp_sensor_context.temp_sensor_tshut_threshold =
+	temp_sensor_context.tshut_threshold =
 	    omap_temp_sensor_readl(temp_sensor, BGAP_TSHUT_OFFSET);
+}
+
+static void omap_temp_sensor_force_single_read(
+				struct omap_temp_sensor *temp_sensor)
+{
+	int temp = 0, counter = 1000;
+
+	/* Select single conversion mode */
+	temp = omap_temp_sensor_readl(temp_sensor, BGAP_CTRL_OFFSET);
+	temp &= ~(OMAP4_SINGLE_MODE_MASK);
+	omap_temp_sensor_writel(temp_sensor, temp, BGAP_CTRL_OFFSET);
+	/* Start of Conversion = 1 */
+	temp = omap_temp_sensor_readl(temp_sensor, TEMP_SENSOR_CTRL_OFFSET);
+	temp |= OMAP4_BGAP_TEMP_SENSOR_SOC_MASK;
+	omap_temp_sensor_writel(temp_sensor, temp, TEMP_SENSOR_CTRL_OFFSET);
+	/* Wait until DTEMP is updated */
+	temp = omap_temp_sensor_readl(temp_sensor, TEMP_SENSOR_CTRL_OFFSET);
+	temp &= (OMAP4_BGAP_TEMP_SENSOR_DTEMP_MASK);
+	while ((temp == 0) && --counter) {
+		temp = omap_temp_sensor_readl(temp_sensor,
+			TEMP_SENSOR_CTRL_OFFSET);
+		temp &= (OMAP4_BGAP_TEMP_SENSOR_DTEMP_MASK);
+	}
+	/* Start of Conversion = 0 */
+	temp = omap_temp_sensor_readl(temp_sensor, TEMP_SENSOR_CTRL_OFFSET);
+	temp &= ~(OMAP4_BGAP_TEMP_SENSOR_SOC_MASK);
+	omap_temp_sensor_writel(temp_sensor, temp, TEMP_SENSOR_CTRL_OFFSET);
 }
 
 static void omap_temp_sensor_restore_ctxt(struct omap_temp_sensor *temp_sensor)
 {
-	omap_temp_sensor_writel(temp_sensor,
-				temp_sensor_context.temp_sensor_ctrl,
+	int temp = 0;
+
+	/* if all registers have been lost */
+	if ((omap_temp_sensor_readl(temp_sensor, BGAP_THRESHOLD_OFFSET) == 0) &&
+	    (omap_temp_sensor_readl(temp_sensor, BGAP_COUNTER_OFFSET) == 0)) {
+		omap_temp_sensor_writel(temp_sensor,
+					temp_sensor_context.bg_threshold,
+					BGAP_THRESHOLD_OFFSET);
+		omap_temp_sensor_writel(temp_sensor,
+					temp_sensor_context.tshut_threshold,
+					BGAP_TSHUT_OFFSET);
+		/*
+		 * Force immediate temperature measurement and update of the
+		 * BGAP_TEMP_SENSOR_DTEMP bitfield before completing the full
+		 * context restoration.
+		 * This ensures that HW does not generate spurious thermal alert
+		 * when restoring the mask bits: if the BGAP_TEMP_SENSOR_DTEMP
+		 * bitfield in CONTROL_TEMP_SENSOR register is not yet
+		 * initialized, the comparison done by the HW logic (against the
+		 * temperature thresholds) will generate an unexpected thermal
+		 * alert.
+		 */
+		omap_temp_sensor_force_single_read(temp_sensor);
+
+		/* Complete context restoration */
+		temp_sensor_context.temp_sensor_ctrl &=
+			~(OMAP4_BGAP_TEMPSOFF_MASK);
+		omap_temp_sensor_writel(temp_sensor,
+					temp_sensor_context.temp_sensor_ctrl,
+					TEMP_SENSOR_CTRL_OFFSET);
+		omap_temp_sensor_writel(temp_sensor,
+					temp_sensor_context.bg_counter,
+					BGAP_COUNTER_OFFSET);
+		omap_temp_sensor_writel(temp_sensor,
+					temp_sensor_context.bg_ctrl,
+					BGAP_CTRL_OFFSET);
+	} else { /* registers have not been reset but DTEMP is not yet valid */
+		temp = omap_temp_sensor_readl(temp_sensor,
+			TEMP_SENSOR_CTRL_OFFSET);
+		temp &= (OMAP4_BGAP_TEMP_SENSOR_DTEMP_MASK);
+		if (temp == 0) {
+			/* BGAP_TEMPSOFF should be reset to 0 */
+			temp = omap_temp_sensor_readl(temp_sensor,
+					TEMP_SENSOR_CTRL_OFFSET);
+			temp &= ~(OMAP4_BGAP_TEMPSOFF_MASK);
+			omap_temp_sensor_writel(temp_sensor, temp,
 				TEMP_SENSOR_CTRL_OFFSET);
-	omap_temp_sensor_writel(temp_sensor,
-				temp_sensor_context.bg_ctrl,
-				BGAP_CTRL_OFFSET);
-	omap_temp_sensor_writel(temp_sensor,
-				temp_sensor_context.bg_counter,
-				BGAP_COUNTER_OFFSET);
-	omap_temp_sensor_writel(temp_sensor,
-				temp_sensor_context.bg_threshold,
-				BGAP_THRESHOLD_OFFSET);
-	omap_temp_sensor_writel(temp_sensor,
-				temp_sensor_context.temp_sensor_tshut_threshold,
-				BGAP_TSHUT_OFFSET);
+			udelay(5);	/* wait for 5 us */
+
+			omap_temp_sensor_force_single_read(temp_sensor);
+
+			/* Select continous conversion mode */
+			temp = omap_temp_sensor_readl(temp_sensor,
+						BGAP_CTRL_OFFSET);
+			temp |= OMAP4_SINGLE_MODE_MASK;
+			omap_temp_sensor_writel(temp_sensor, temp,
+						BGAP_CTRL_OFFSET);
+		}
+	}
 }
 
 static int omap_temp_sensor_suspend(struct platform_device *pdev,
@@ -1139,6 +1222,7 @@ static int omap_temp_sensor_runtime_suspend(struct device *dev)
 			platform_get_drvdata(to_platform_device(dev));
 
 	omap_temp_sensor_save_ctxt(temp_sensor);
+	temp_sensor->context_saved = true;
 
 	return 0;
 }
@@ -1147,8 +1231,11 @@ static int omap_temp_sensor_runtime_resume(struct device *dev)
 {
 	struct omap_temp_sensor *temp_sensor =
 			platform_get_drvdata(to_platform_device(dev));
-	if (omap_pm_was_context_lost(dev))
+	if (omap_pm_was_context_lost(dev) &&
+				temp_sensor->context_saved) {
 		omap_temp_sensor_restore_ctxt(temp_sensor);
+		temp_sensor->context_saved = false;
+ 	}
 	return 0;
 }
 

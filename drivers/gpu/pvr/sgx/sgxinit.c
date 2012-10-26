@@ -25,6 +25,7 @@
  ******************************************************************************/
 
 #include <stddef.h>
+#include <linux/trapz.h>
 
 #include "sgxdefs.h"
 #include "sgxmmu.h"
@@ -1048,6 +1049,25 @@ IMG_VOID SGXDumpDebugInfo (PVRSRV_SGXDEV_INFO	*psDevInfo,
 			SGXDumpDebugReg(psDevInfo, ui32CoreNum, "EUR_CR_PDS_PC_BASE:      ", EUR_CR_PDS_PC_BASE);
 		#endif
 		}
+#if !defined(SGX_FEATURE_MULTIPLE_MEM_CONTEXTS) && !defined(FIX_HW_BRN_31620)
+		{
+			IMG_UINT32 ui32RegVal;
+			IMG_UINT32 ui32PDDevPAddr;
+
+			
+
+
+			ui32RegVal = OSReadHWReg(psDevInfo->pvRegsBaseKM, EUR_CR_BIF_INT_STAT);
+			if (ui32RegVal & EUR_CR_BIF_INT_STAT_PF_N_RW_MASK)
+			{
+				ui32RegVal = OSReadHWReg(psDevInfo->pvRegsBaseKM, EUR_CR_BIF_FAULT);
+				ui32RegVal &= EUR_CR_BIF_FAULT_ADDR_MASK;
+				ui32PDDevPAddr = OSReadHWReg(psDevInfo->pvRegsBaseKM, EUR_CR_BIF_DIR_LIST_BASE0);
+				ui32PDDevPAddr &= EUR_CR_BIF_DIR_LIST_BASE0_ADDR_MASK;
+				MMU_CheckFaultAddr(psDevInfo, ui32PDDevPAddr, ui32RegVal);
+			}
+		}
+#endif
 	}
 
 	
@@ -1354,8 +1374,6 @@ IMG_BOOL SGX_ISRHandler (IMG_VOID *pvData)
 {
 	IMG_BOOL bInterruptProcessed = IMG_FALSE;
 
-
-	
 	{
 		IMG_UINT32 ui32EventStatus, ui32EventEnable;
 		IMG_UINT32 ui32EventClear = 0;

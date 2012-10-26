@@ -256,6 +256,19 @@ static void musb_otg_notifier_work(struct work_struct *data_notifier_work)
 
 	kfree(otg_work);
 
+	/* Protection from unnecessary double events */
+	if (musb->xceiv->last_event == xceiv_event)
+		return;
+
+	/* Protection from quick plug/unplug, without
+	   enough time to detect source type. */
+	if (xceiv_event == USB_EVENT_NONE &&
+	    musb->xceiv->last_event == USB_EVENT_DETECT_SOURCE)
+		return;
+
+	/* Remember current event */
+	musb->xceiv->last_event = xceiv_event;
+
 	switch (xceiv_event) {
 	case USB_EVENT_ID:
 		dev_dbg(musb->controller, "ID GND\n");
@@ -330,24 +343,28 @@ static void musb_otg_notifier_work(struct work_struct *data_notifier_work)
 
 		dev_dbg(musb->controller, "VBUS Disconnect\n");
 
-#ifdef CONFIG_USB_GADGET_MUSB_HDRC
-		if (is_otg_enabled(musb) || is_peripheral_enabled(musb))
-			if (musb->gadget_driver)
-#endif
-			{
-				pm_runtime_mark_last_busy(musb->controller);
-				pm_runtime_put_autosuspend(musb->controller);
-			}
-
+		pm_runtime_get_sync(musb->controller);
 		if (data->interface_type == MUSB_INTERFACE_UTMI) {
 			omap2430_musb_set_vbus(musb, 0);
 			if (musb->xceiv->set_vbus)
 				otg_set_vbus(musb->xceiv, 0);
 		}
-		otg_shutdown(musb->xceiv);
+
 		val = musb_readl(musb->mregs, OTG_INTERFSEL);
 		val |= ULPI_12PIN;
 		musb_writel(musb->mregs, OTG_INTERFSEL, val);
+
+		otg_shutdown(musb->xceiv);
+		pm_runtime_mark_last_busy(musb->controller);
+		pm_runtime_put_autosuspend(musb->controller);
+
+#ifdef CONFIG_USB_GADGET_MUSB_HDRC
+		if (is_otg_enabled(musb) || is_peripheral_enabled(musb))
+			if (musb->gadget_driver)
+#endif
+			{
+				pm_runtime_put_autosuspend(musb->controller);
+			}
 		break;
 	default:
 		dev_dbg(musb->controller, "ID float\n");
@@ -539,13 +556,13 @@ static int __init omap2430_probe(struct platform_device *pdev)
 		goto err2;
 	}
 
+	pm_runtime_enable(&pdev->dev);
+
 	ret = platform_device_add(musb);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to register musb device\n");
 		goto err2;
 	}
-
-	pm_runtime_enable(&pdev->dev);
 
 	return 0;
 

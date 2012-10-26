@@ -540,14 +540,6 @@ config TWL6040_VIB
 	depends on TWL6040_CODEC && ANDROID_TIMED_OUTPUT
 	default n
 
-config OMAP4_DUTY_CYCLE
-	tristate "Control OPP_NITRO usage based on duty cycle strategy"
-	depends on ARCH_OMAP4
-	default n
-	---help---
-	If you are going to use OPP_NITRO with high level of leakage which.
-	could pontentially sustain a thermal runaway, say Y here.
-
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
@@ -556,5 +548,6 @@ source "drivers/misc/ti-st/Kconfig"
 source "drivers/misc/lis3lv02d/Kconfig"
 source "drivers/misc/carma/Kconfig"
 source "drivers/misc/gc-core/Kconfig"
+source "drivers/misc/bma250/Kconfig"
 
 endif # MISC_DEVICES

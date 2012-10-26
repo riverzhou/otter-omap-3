@@ -51,9 +51,36 @@
 #define USB2PHY_CHGDETECTED		BIT(13)
 #define USB2PHY_DISCHGDET		BIT(30)
 
+#define USB2PHY_BASE			(0x4A0AD000)
+
 static struct clk *phyclk, *clk48m, *clk32k;
 static void __iomem *ctrl_base;
+static void __iomem *usbphy_base;
 static int usbotghs_control;
+
+int omap4430_phy_cfg(struct device *dev)
+{
+	u32 reg;
+
+	/* This constant value of this address are special request
+	   received from Andrew Chang (Quanta) at 23 May 2012 */
+
+	__raw_writel(0x0000038F, usbphy_base + 0x0018);
+
+	/* USBPHY_ANA_CONFIG2[16:15] = RTERM_TEST = 11 */
+	reg = __raw_readl(usbphy_base + 0x00D4);
+	reg |= 0x00018000;
+	__raw_writel(reg, usbphy_base + 0x00D4);
+
+	/* USBPHY_TERMINATION_CONTROL[13:11] = HS_CODE_SEL = 011 */
+	reg = __raw_readl(usbphy_base + 0x0080) & ~0x00003800;
+	reg |= 0x00001800;
+	__raw_writel(reg, usbphy_base + 0x0080);
+
+	__raw_writel(0x409ff340, usbphy_base + 0x00B8);
+
+	return 0;
+}
 
 int omap4430_phy_init(struct device *dev)
 {
@@ -65,8 +92,15 @@ int omap4430_phy_init(struct device *dev)
 	/* Power down the phy */
 	__raw_writel(PHY_PD, ctrl_base + CONTROL_DEV_CONF);
 
+	usbphy_base = ioremap(USB2PHY_BASE, SZ_1K);
+	if (!usbphy_base) {
+		pr_err("control module ioremap failed\n");
+		return -ENOMEM;
+	}
+
 	if (!dev) {
 		iounmap(ctrl_base);
+		iounmap(usbphy_base);
 		return 0;
 	}
 
@@ -74,6 +108,7 @@ int omap4430_phy_init(struct device *dev)
 	if (IS_ERR(phyclk)) {
 		dev_err(dev, "cannot clk_get ocp2scp_usb_phy_ick\n");
 		iounmap(ctrl_base);
+		iounmap(usbphy_base);
 		return PTR_ERR(phyclk);
 	}
 
@@ -82,6 +117,7 @@ int omap4430_phy_init(struct device *dev)
 		dev_err(dev, "cannot clk_get ocp2scp_usb_phy_phy_48m\n");
 		clk_put(phyclk);
 		iounmap(ctrl_base);
+		iounmap(usbphy_base);
 		return PTR_ERR(clk48m);
 	}
 
@@ -91,6 +127,7 @@ int omap4430_phy_init(struct device *dev)
 		clk_put(phyclk);
 		clk_put(clk48m);
 		iounmap(ctrl_base);
+		iounmap(usbphy_base);
 		return PTR_ERR(clk32k);
 	}
 	return 0;
@@ -106,7 +143,7 @@ int omap4430_phy_set_clk(struct device *dev, int on)
 		clk_enable(clk48m);
 		clk_enable(clk32k);
 		state = 1;
-	} else if (state) {
+	} else if (!on && state) {
 		/* Disable the phy clocks */
 		clk_disable(phyclk);
 		clk_disable(clk48m);
@@ -190,6 +227,7 @@ int omap4430_phy_power(struct device *dev, int ID, int on)
 			 */
 			__raw_writel(IDDIG | AVALID | VBUSVALID,
 						ctrl_base + USBOTGHS_CONTROL);
+		omap4430_phy_cfg(dev);
 	} else {
 		/* Enable session END and IDIG to high impedance. */
 		__raw_writel(SESSEND | IDDIG, ctrl_base +
@@ -201,11 +239,11 @@ int omap4430_phy_power(struct device *dev, int ID, int on)
 int omap4430_phy_suspend(struct device *dev, int suspend)
 {
 	if (suspend) {
-		/* Disable the clocks */
-		omap4430_phy_set_clk(dev, 0);
 		/* Power down the phy */
 		__raw_writel(PHY_PD, ctrl_base + CONTROL_DEV_CONF);
-
+		mdelay(200);
+		/* Disable the clocks */
+		omap4430_phy_set_clk(dev, 0);
 		/* save the context */
 		usbotghs_control = __raw_readl(ctrl_base + USBOTGHS_CONTROL);
 	} else {
@@ -214,7 +252,7 @@ int omap4430_phy_suspend(struct device *dev, int suspend)
 		/* power on the phy */
 		if (__raw_readl(ctrl_base + CONTROL_DEV_CONF) & PHY_PD) {
 			__raw_writel(~PHY_PD, ctrl_base + CONTROL_DEV_CONF);
-			mdelay(200);
+			msleep(300);
 		}
 
 		/* restore the context */
@@ -228,6 +266,8 @@ int omap4430_phy_exit(struct device *dev)
 {
 	if (ctrl_base)
 		iounmap(ctrl_base);
+	if (usbphy_base)
+		iounmap(usbphy_base);
 	if (phyclk)
 		clk_put(phyclk);
 	if (clk48m)

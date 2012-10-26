@@ -24,6 +24,8 @@
  *
  ******************************************************************************/
 
+#include <linux/trapz.h>
+
 #include "services_headers.h"
 #include "buffer_manager.h"
 #include "pvr_bridge_km.h"
@@ -32,6 +34,7 @@
 #include "pdump_km.h"
 #include "deviceid.h"
 #include "ra.h"
+#include "sysfs.h"
 #if defined(TTRACE)
 #include "ttrace.h"
 #endif
@@ -201,6 +204,12 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVEnumerateDevicesKM(IMG_UINT32 *pui32NumDevices,
 PVRSRV_ERROR IMG_CALLCONV PVRSRVInit(PSYS_DATA psSysData)
 {
 	PVRSRV_ERROR	eError;
+
+	eError = PVRSRVCreateSysfsEntry();
+	if (eError != PVRSRV_OK)
+	{
+		goto Error;
+	}
 
 	
 	eError = ResManInit();
@@ -430,9 +439,17 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVInitialiseDevice (IMG_UINT32 ui32DevIndex)
 static PVRSRV_ERROR PVRSRVFinaliseSystem_SetPowerState_AnyCb(PVRSRV_DEVICE_NODE *psDeviceNode)
 {
 	PVRSRV_ERROR eError;
+
+	eError = PVRSRVPowerLock(KERNEL_ID, IMG_FALSE);
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,"PVRSRVFinaliseSystem: Failed PVRSRVPowerLock call (device index: %d)", psDeviceNode->sDevId.ui32DeviceIndex));
+		return eError;
+	}
+
 	eError = PVRSRVSetDevicePowerStateKM(psDeviceNode->sDevId.ui32DeviceIndex,
-										 PVRSRV_DEV_POWER_STATE_DEFAULT,
-										 KERNEL_ID, IMG_FALSE);
+										 PVRSRV_DEV_POWER_STATE_DEFAULT);
+	PVRSRVPowerUnlock(KERNEL_ID);
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,"PVRSRVFinaliseSystem: Failed PVRSRVSetDevicePowerStateKM call (device index: %d)", psDeviceNode->sDevId.ui32DeviceIndex));
@@ -586,11 +603,16 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVDeinitialiseDevice(IMG_UINT32 ui32DevIndex)
 	}
 
 	
+	eError = PVRSRVPowerLock(KERNEL_ID, IMG_FALSE);
+	if (eError != PVRSRV_OK)
+	{
+		PVR_DPF((PVR_DBG_ERROR,"PVRSRVDeinitialiseDevice: Failed PVRSRVPowerLock call"));
+		return eError;
+	}
 
 	eError = PVRSRVSetDevicePowerStateKM(ui32DevIndex,
-										 PVRSRV_DEV_POWER_STATE_OFF,
-										 KERNEL_ID,
-										 IMG_FALSE);
+										 PVRSRV_DEV_POWER_STATE_OFF);
+	PVRSRVPowerUnlock(KERNEL_ID);
 	if (eError != PVRSRV_OK)
 	{
 		PVR_DPF((PVR_DBG_ERROR,"PVRSRVDeinitialiseDevice: Failed PVRSRVSetDevicePowerStateKM call"));
@@ -840,7 +862,9 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVGetMiscInfoKM(PVRSRV_MISC_INFO *psMiscInfo)
 										|PVRSRV_MISC_INFO_CPUCACHEOP_PRESENT
 										|PVRSRV_MISC_INFO_RESET_PRESENT
 										|PVRSRV_MISC_INFO_FREEMEM_PRESENT
-										|PVRSRV_MISC_INFO_GET_REF_COUNT_PRESENT))
+										|PVRSRV_MISC_INFO_GET_REF_COUNT_PRESENT
+										|PVRSRV_MISC_INFO_GET_PAGE_SIZE_PRESENT
+										|PVRSRV_MISC_INFO_FORCE_SWAP_TO_SYSTEM_PRESENT))
 	{
 		PVR_DPF((PVR_DBG_ERROR,"PVRSRVGetMiscInfoKM: invalid state request flags"));
 		return PVRSRV_ERROR_INVALID_PARAMS;
@@ -1094,6 +1118,12 @@ PVRSRV_ERROR IMG_CALLCONV PVRSRVGetMiscInfoKM(PVRSRV_MISC_INFO *psMiscInfo)
 	}
 #endif 
 
+	if ((psMiscInfo->ui32StateRequest & PVRSRV_MISC_INFO_FORCE_SWAP_TO_SYSTEM_PRESENT) != 0UL)
+	{
+		PVRSRVSetDCState(DC_STATE_FORCE_SWAP_TO_SYSTEM);
+		psMiscInfo->ui32StatePresent |= PVRSRV_MISC_INFO_FORCE_SWAP_TO_SYSTEM_PRESENT;
+	}
+
 	return PVRSRV_OK;
 }
 
@@ -1203,7 +1233,6 @@ IMG_VOID IMG_CALLCONV PVRSRVMISR(IMG_VOID *pvSysData)
 		return;
 	}
 
-	
 	List_PVRSRV_DEVICE_NODE_ForEach(psSysData->psDeviceNodeList,
 									&PVRSRVMISR_ForEachCb);
 

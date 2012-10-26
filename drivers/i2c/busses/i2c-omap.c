@@ -159,6 +159,9 @@ enum {
 #define I2C_OMAP_ERRATA_I207		(1 << 0)
 #define I2C_OMAP3_1P153			(1 << 1)
 
+#define I2C_TIMEOUT_DEBUG
+#define I2C_TIMEOUT_DEBUG_SIZE           4
+
 struct omap_i2c_dev {
 	struct device		*dev;
 	void __iomem		*base;		/* virtual */
@@ -180,6 +183,7 @@ struct omap_i2c_dev {
 						 * if set, should be trsh+1
 						 */
 	u8			rev;
+	bool			shutdown;
 	unsigned		b_hw:1;		/* bad h/w fixes */
 	unsigned		idle:1;
 	u16			iestate;	/* Saved interrupt register */
@@ -189,6 +193,12 @@ struct omap_i2c_dev {
 	u16			bufstate;
 	u16			westate;
 	u16			errata;
+
+#ifdef  I2C_TIMEOUT_DEBUG
+        struct i2c_msg          last_msg[I2C_TIMEOUT_DEBUG_SIZE];
+        u8                      last_msg_idx;
+#endif
+
 };
 
 const static u8 reg_map[] = {
@@ -236,6 +246,38 @@ const static u8 omap4_reg_map[] = {
 	[OMAP_I2C_IRQENABLE_SET] = 0x2c,
 	[OMAP_I2C_IRQENABLE_CLR] = 0x30,
 };
+
+
+static inline void omap_i2c_log_msg(struct omap_i2c_dev *i2c_dev, struct i2c_msg *msg)
+{
+#ifdef  I2C_TIMEOUT_DEBUG
+   u8 id = i2c_dev->last_msg_idx;
+   memcpy(&i2c_dev->last_msg[id], msg, sizeof(*msg));
+   i2c_dev->last_msg_idx = (id+1) % I2C_TIMEOUT_DEBUG_SIZE;
+#endif
+}
+
+static inline void omap_i2c_log_msg_init(struct omap_i2c_dev *i2c_dev)
+{
+#ifdef  I2C_TIMEOUT_DEBUG
+   i2c_dev->last_msg_idx = 0;
+   memset(&i2c_dev->last_msg[0], 0, sizeof(struct i2c_msg) * I2C_TIMEOUT_DEBUG_SIZE);
+#endif
+}
+
+static inline void omap_i2c_log_msg_print(struct omap_i2c_dev *i2c_dev)
+{
+#ifdef  I2C_TIMEOUT_DEBUG
+   int i;
+   u8 id = i2c_dev->last_msg_idx;
+
+   for(i=0; i< I2C_TIMEOUT_DEBUG_SIZE; i++) {
+      dev_err(i2c_dev->dev, "last_msg[%d]: addr=0x%04x, len=%d, flags=0x%x\n",
+              id, i2c_dev->last_msg[id].addr, i2c_dev->last_msg[id].len, i2c_dev->last_msg[id].flags);
+      id = (id+1) % I2C_TIMEOUT_DEBUG_SIZE;
+   }
+#endif
+}
 
 static inline void omap_i2c_write_reg(struct omap_i2c_dev *i2c_dev,
 				      int reg, u16 val)
@@ -332,11 +374,26 @@ static void omap_i2c_idle(struct omap_i2c_dev *dev)
 
 static inline void omap_i2c_reset(struct omap_i2c_dev *dev)
 {
+	/* TTX-897: Fix Wi-Fi on/off causes system mysteriously reboots
+	 *
+	 *   This issue is more depth and is not directly depend with WiFi.
+	 *   I found many different situations which cause IRQ #42 (L3 Bus:
+	 *   with custom error L4_PRE2 and master MPU) follow with TRAP #22
+	 *   ("imprecise external abort") which is not recoverable. All of
+	 *   this cause die of CPU-A9. I found that all of this is depend with
+	 *   I2C reset sequence which include disable/enable of controller and
+	 *   software reset. This sequence is used even in cases where there
+	 *   is no I2C-ACK, which is a normal case and do not have such a
+	 *   re-initialization. With discard this reset sequence I do not
+	 *   see more IRQ #42 and TRAP #22. And the system does not restart.
+	 */
+#if 0
 	if (!dev->device_reset)
 		return;
 
 	if (dev->device_reset(dev->dev) < 0)
 		dev_err(dev->dev, "reset failed\n");
+#endif
 }
 
 static int omap_i2c_init(struct omap_i2c_dev *dev)
@@ -483,6 +540,7 @@ static int omap_i2c_wait_for_bb(struct omap_i2c_dev *dev)
 	while (omap_i2c_read_reg(dev, OMAP_I2C_STAT_REG) & OMAP_I2C_STAT_BB) {
 		if (time_after(jiffies, timeout)) {
 			dev_warn(dev->dev, "timeout waiting for bus ready\n");
+                        omap_i2c_log_msg_print(dev);
 			return -ETIMEDOUT;
 		}
 		msleep(1);
@@ -527,6 +585,8 @@ static int omap_i2c_xfer_msg(struct i2c_adapter *adap,
 
 	dev_dbg(dev->dev, "addr: 0x%04x, len: %d, flags: 0x%x, stop: %d\n",
 		msg->addr, msg->len, msg->flags, stop);
+
+        omap_i2c_log_msg(dev, msg);
 
 	if (msg->len == 0)
 		return -EINVAL;
@@ -594,6 +654,7 @@ static int omap_i2c_xfer_msg(struct i2c_adapter *adap,
 	dev->buf_len = 0;
 	if (r == 0) {
 		dev_err(dev->dev, "controller timed out\n");
+                omap_i2c_log_msg_print(dev);
 		omap_i2c_reset(dev);
 		omap_i2c_init(dev);
 		return -ETIMEDOUT;
@@ -637,6 +698,9 @@ omap_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	if (dev == NULL)
 		return -EINVAL;
 
+	if (dev->shutdown)
+		return -EPERM;
+
 	r = omap_i2c_hwspinlock_lock(dev);
 	/* To-Do: if we are unable to acquire the lock, we must
 	try to recover somehow */
@@ -677,9 +741,10 @@ omap_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 
 	omap_i2c_wait_for_bb(dev);
 out:
+	disable_irq(dev->irq);
 	omap_i2c_idle(dev);
 	omap_i2c_hwspinlock_unlock(dev);
-	disable_irq(dev->irq);
+
 	return r;
 }
 
@@ -827,7 +892,7 @@ omap_i2c_isr(int this_irq, void *dev_id)
 	u16 stat, w;
 	int err, count = 0;
 
-	if (dev->idle)
+	if (dev->idle || dev->shutdown)
 		return IRQ_NONE;
 
 	while ((stat = (omap_i2c_read_reg(dev, OMAP_I2C_STAT_REG))) & dev->iestate) {
@@ -848,13 +913,12 @@ complete:
 				~(OMAP_I2C_STAT_RRDY | OMAP_I2C_STAT_RDR |
 				OMAP_I2C_STAT_XRDY | OMAP_I2C_STAT_XDR));
 
-		if (stat & OMAP_I2C_STAT_NACK) {
+		if (stat & OMAP_I2C_STAT_NACK)
 			err |= OMAP_I2C_STAT_NACK;
-			omap_i2c_write_reg(dev, OMAP_I2C_CON_REG,
-					   OMAP_I2C_CON_STP);
-		}
+
 		if (stat & OMAP_I2C_STAT_AL) {
-			dev_err(dev->dev, "Arbitration lost\n");
+			dev_err(dev->dev, "Dump stack on Arbitration lost\n");
+			dump_stack();
 			err |= OMAP_I2C_STAT_AL;
 		}
 		/*
@@ -1017,6 +1081,8 @@ omap_i2c_probe(struct platform_device *pdev)
 		goto err_release_region;
 	}
 
+        omap_i2c_log_msg_init(dev);
+
 	if (pdata) {
 		speed = pdata->clkrate;
 		dev->device_reset = pdata->device_reset;
@@ -1177,6 +1243,30 @@ omap_i2c_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#define PMIC_I2C_NAME "omap_i2c.1"
+static void
+omap_i2c_shutdown(struct platform_device *pdev)
+{
+	struct omap_i2c_dev	*dev = platform_get_drvdata(pdev);
+
+	/* Keep pmic i2c alive - for pm_power_off case */
+	if (!strcmp(dev_name(dev->dev), PMIC_I2C_NAME))
+			return;
+
+	/* Shutdown all other i2c controllers */
+	pm_runtime_get_sync(&pdev->dev);
+	omap_i2c_write_reg(dev, OMAP_I2C_CON_REG, 0);
+	/* Keep interrupts disabled */
+	free_irq(dev->irq, dev);
+	if (cpu_is_omap44xx() && dev->rev >= OMAP_I2C_REV_ON_4430)
+		omap_i2c_write_reg(dev, OMAP_I2C_IRQENABLE_CLR, 0x6FFF);
+	else
+		omap_i2c_write_reg(dev, OMAP_I2C_IE_REG, 0);
+	pm_runtime_put_sync(&pdev->dev);
+
+	dev->shutdown = true;
+}
+
 #ifdef CONFIG_SUSPEND
 static int omap_i2c_suspend(struct device *dev)
 {
@@ -1211,6 +1301,7 @@ static struct platform_driver omap_i2c_driver = {
 		.owner	= THIS_MODULE,
 		.pm	= OMAP_I2C_PM_OPS,
 	},
+	.shutdown	= omap_i2c_shutdown,
 };
 
 /* I2C may be needed to bring up other drivers */
