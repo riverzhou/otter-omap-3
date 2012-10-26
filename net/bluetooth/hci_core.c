@@ -1800,9 +1800,29 @@ int hci_recv_stream_fragment(struct hci_dev *hdev, void *data, int count)
 
 		rem = hci_reassembly(hdev, type, data, count,
 							STREAM_REASSEMBLY);
-		if (rem < 0)
-			return rem;
 
+		if (rem < 0) {
+                        //possible errors (-EILSEQ, -ENOMEM)
+                        int     i = 0;
+                        char    temp_buf[20];
+                        char    *pkt_type = NULL;
+                        switch( type ) {
+                        case HCI_COMMAND_PKT:   pkt_type = "HCI_COMMAND";               break;
+                        case HCI_ACLDATA_PKT:   pkt_type = "HCI_ACLDATA";               break;
+                        case HCI_SCODATA_PKT:   pkt_type = "HCI_SCODATA";               break;
+                        case HCI_EVENT_PKT:     pkt_type = "HCI_EVENT"  ;               break;
+                        case HCI_VENDOR_PKT:    pkt_type = "HCI_VENDOR_SPECIFIC";       break;
+                        default:
+                                sprintf(temp_buf, "%d", type);
+                                pkt_type = temp_buf;
+                                break;
+                        }
+                        BT_ERR("hci_reassembly() failed, pkt_type=%s,errno=%d, count=%d", pkt_type,rem,count);
+                        for( i = 0; i < count; i++ ) {
+                                BT_ERR("    d[%2d]=0x%02x",i,((char *)data)[i]);
+                        }
+			return rem;
+		}
 		data += (count - rem);
 		count = rem;
 	};

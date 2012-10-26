@@ -47,6 +47,8 @@
 #define DISPC_IRQ_ACBIAS_COUNT_STAT2	(1 << 21)
 #define DISPC_IRQ_FRAMEDONE2		(1 << 22)
 #define DISPC_IRQ_FRAMEDONETV		(1 << 24)
+#define HDMI_EDID_SAD_MAX_LENGTH	10
+#define HDMI_EDID_AUDIO_LPCM		1
 
 struct omap_dss_device;
 struct omap_overlay_manager;
@@ -230,6 +232,18 @@ struct rfbi_timings {
 	int converted;
 };
 
+struct hdmi_audio_descriptor {
+	unsigned int num_of_ch;
+	unsigned int format;
+	unsigned int rates;
+	u64 bit_depth;
+};
+
+struct hdmi_audio_edid {
+	int length;
+	struct hdmi_audio_descriptor sad[HDMI_EDID_SAD_MAX_LENGTH];
+};
+
 void omap_rfbi_write_command(const void *buf, u32 len);
 void omap_rfbi_read_data(void *buf, u32 len);
 void omap_rfbi_write_data(const void *buf, u32 len);
@@ -275,12 +289,14 @@ void dsi_video_mode_disable(struct omap_dss_device *dssdev);
 int dsi_vc_gen_read_2(struct omap_dss_device *dssdev, int channel, u16 cmd,
 		u8 *buf, int buflen);
 void dsi_videomode_panel_preinit(struct omap_dss_device *dssdev);
-
+int dsi_dummy_read(struct omap_dss_device *dssdev, int channel, u8 *buf,
+		int buflen);
 
 /* Board specific data */
 struct omap_dss_board_info {
 	int (*get_context_loss_count)(struct device *dev);
 	int num_devices;
+	bool move_wb_buffers;
 	struct omap_dss_device **devices;
 	struct omap_dss_device *default_device;
 	void (*dsi_mux_pads)(bool enable);
@@ -435,6 +451,7 @@ struct omap_overlay_manager_info {
 
 	bool cpr_enable;
 	struct omap_dss_cpr_coefs cpr_coefs;
+	u8 gamma;
 };
 
 struct omap_overlay_manager {
@@ -661,6 +678,7 @@ struct omap_dss_driver {
 			  int modedb_len);
 	int (*set_mode)(struct omap_dss_device *dssdev,
 			struct fb_videomode *mode);
+	void (*reset_panel)(struct omap_dss_device *dssdev);
 
 	/* for wrapping around state changes */
 	void (*disable_orig)(struct omap_dss_device *display);
@@ -724,6 +742,7 @@ void omap_dsi_release_vc(struct omap_dss_device *dssdev, int channel);
 int omapdss_dsi_display_enable(struct omap_dss_device *dssdev);
 void omapdss_dsi_display_disable(struct omap_dss_device *dssdev,
 		bool disconnect_lanes, bool enter_ulps);
+int omapdss_dsi_display_reset(struct omap_dss_device *dssdev);
 
 int omapdss_dpi_display_enable(struct omap_dss_device *dssdev);
 void omapdss_dpi_display_disable(struct omap_dss_device *dssdev);
@@ -758,5 +777,5 @@ static inline void dss_ovl_cb(struct omapdss_ovl_cb *cb, int id, int status)
 	if (!cb->mask)
 		cb->fn = NULL;
 }
-
+void omapdss_hdmi_get_audio_descriptors(struct hdmi_audio_edid *audio_db);
 #endif

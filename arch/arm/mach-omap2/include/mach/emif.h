@@ -21,7 +21,7 @@
 #define EMIF2	1
 
 /* The maximum frequency at which the LPDDR2 interface can operate in Hz*/
-#define MAX_LPDDR2_FREQ	400000000	/* 400 MHz */
+#define MAX_LPDDR2_FREQ	466666666	/* 466 MHz */
 
 /* 19.2 MHz to be used for finding initialization values */
 #define EMIF_FREQ_19_2_MHZ 19200000	/* 19.2 MHz */
@@ -258,9 +258,16 @@ struct emif_regs {
 
 int omap_emif_setup_registers(u32 freq,
 			      u32 volt_state);
+void omap_emif_frequency_pre_notify(void);
+void omap_emif_frequency_post_notify(void);
 int omap_emif_setup_device_details(
 			const struct emif_device_details *emif1_devices,
 			const struct emif_device_details *emif2_devices);
 
 void emif_clear_irq(int emif_id);
+
+int omap_sdram_vendor(void);
+
+int omap_sdram_density(void);
+
 #endif

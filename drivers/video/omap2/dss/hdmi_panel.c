@@ -26,6 +26,7 @@
 #include <linux/module.h>
 #include <video/omapdss.h>
 #include <linux/switch.h>
+#include <sound/omap-hdmi-codec.h>
 
 #include "dss.h"
 
@@ -34,7 +35,16 @@
 static struct {
 	struct mutex hdmi_lock;
 	struct switch_dev hpd_switch;
+	bool sync_lost;
 } hdmi;
+
+static ssize_t hdmi_audio_max_channel_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	int r;
+	r = hdmi_audio_get_max_channels();
+	return snprintf(buf, PAGE_SIZE, "%d\n", r);
+}
 
 static ssize_t hdmi_deepcolor_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
@@ -155,12 +165,19 @@ static DEVICE_ATTR(s3d_type, S_IRUGO | S_IWUSR, hdmi_s3d_mode_show,
 static DEVICE_ATTR(edid, S_IRUGO, hdmi_edid_show, NULL);
 static DEVICE_ATTR(deepcolor, S_IRUGO | S_IWUSR, hdmi_deepcolor_show,
 							hdmi_deepcolor_store);
+static DEVICE_ATTR(audio_channels, S_IRUGO, hdmi_audio_max_channel_show,
+							NULL);
+
 
 static struct attribute *hdmi_panel_attrs[] = {
 	&dev_attr_s3d_enable.attr,
 	&dev_attr_s3d_type.attr,
 	&dev_attr_edid.attr,
 	&dev_attr_deepcolor.attr,
+#ifdef CONFIG_HDMI_CERT_DEBUG
+	&dev_attr_hdmi_timings,
+#endif
+	&dev_attr_audio_channels.attr,
 	NULL,
 };
 
@@ -210,13 +227,19 @@ static int hdmi_panel_enable(struct omap_dss_device *dssdev)
 		goto err;
 	}
 
-	r = omapdss_hdmi_display_enable(dssdev);
-	if (r) {
-		DSSERR("failed to power on\n");
-		goto err;
+	if (hdmi.sync_lost) {
+		hdmi.sync_lost = false;
+		hdmi_panel_hpd_handler(hdmi_get_current_hpd());
 	}
 
 	dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
+	r = omapdss_hdmi_display_enable(dssdev);
+	if (r) {
+		DSSERR("failed to power on\n");
+		dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
+		goto err;
+	}
+
 err:
 	mutex_unlock(&hdmi.hdmi_lock);
 
@@ -231,6 +254,9 @@ static void hdmi_panel_disable(struct omap_dss_device *dssdev)
 		omapdss_hdmi_display_disable(dssdev);
 
 	dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
+
+	if (dssdev->sync_lost_error)
+		hdmi.sync_lost = true;
 
 	mutex_unlock(&hdmi.hdmi_lock);
 }
@@ -278,7 +304,7 @@ err:
 enum {
 	HPD_STATE_OFF,
 	HPD_STATE_START,
-	HPD_STATE_EDID_TRYLAST = HPD_STATE_START + 5,
+	HPD_STATE_EDID_TRYLAST = HPD_STATE_START + 10,
 };
 
 static struct hpd_worker_data {
@@ -306,10 +332,13 @@ static void hdmi_hotplug_detect_worker(struct work_struct *work)
 	mutex_lock(&hdmi.hdmi_lock);
 	if (state == HPD_STATE_OFF) {
 		switch_set_state(&hdmi.hpd_switch, 0);
+		/* Clear edid only on unplug */
+		hdmi_set_edid_state(false);
 		if (dssdev->state == OMAP_DSS_DISPLAY_ACTIVE) {
 			mutex_unlock(&hdmi.hdmi_lock);
 			dssdev->driver->disable(dssdev);
 			omapdss_hdmi_enable_s3d(false);
+			hdmi_audio_update_edid_info();
 			mutex_lock(&hdmi.hdmi_lock);
 		}
 		goto done;
@@ -332,6 +361,7 @@ static void hdmi_hotplug_detect_worker(struct work_struct *work)
 					dssdev->panel.monspecs.max_x * 10000;
 			dssdev->panel.height_in_um =
 					dssdev->panel.monspecs.max_y * 10000;
+			hdmi_audio_update_edid_info();
 			switch_set_state(&hdmi.hpd_switch, 1);
 			goto done;
 		} else if (state == HPD_STATE_EDID_TRYLAST){
@@ -430,6 +460,7 @@ int hdmi_panel_init(void)
 	mutex_init(&hdmi.hdmi_lock);
 	hdmi.hpd_switch.name = "hdmi";
 	switch_dev_register(&hdmi.hpd_switch);
+	hdmi.sync_lost = false;
 
 	my_workq = create_singlethread_workqueue("hdmi_hotplug");
 	INIT_DELAYED_WORK(&hpd_work.dwork, hdmi_hotplug_detect_worker);

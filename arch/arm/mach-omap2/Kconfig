@@ -330,12 +330,22 @@ config MACH_OMAP_4430SDP
 	select TOUCHSCREEN_SYNTM12XX
 	select TWL6030_POWEROFF
 	select INPUT_TWL6030_PWRBUTTON
-	select TWL6040_VIB
+#	select TWL6040_VIB
 	select TWL6030_BCI_BATTERY
 	select CHARGER_BQ2415x
 	select TWL6030_GPADC
 	select OMAP_REBOOT_REASON
 	select OMAP_RAM_CONSOLE
+
+config MACH_OMAP4_BOWSER
+	bool "OMAP4 based Bowser board"
+	default y
+	depends on ARCH_OMAP4
+	select OMAP_PACKAGE_CBL
+	select OMAP_PACKAGE_CBS
+	select REGULATOR_FIXED_VOLTAGE
+	select OMAP_TPS6236X
+	select OMAP_REBOOT_REASON
 
 config MACH_OMAP_BLAZE
 	bool "OMAP 44xx Tablet2 Board"
@@ -351,9 +361,9 @@ config MACH_OMAP_BLAZE
 	select INPUT_HMC5843
 	select INPUT_MPU3050
 	select INPUT_BMA180
-	select PANEL_TC358765
+#	select PANEL_TC358765
 	select KEYBOARD_GPIO
-	select TWL6040_VIB
+#	select TWL6040_VIB
 	select OMAP_REBOOT_REASON
 	select OMAP_RAM_CONSOLE
 
@@ -367,6 +377,11 @@ config MACH_OMAP4_PANDA
 	select OMAP_TPS6236X
 	select OMAP_REBOOT_REASON
 	select OMAP_RAM_CONSOLE
+
+config MACH_OMAP4_BOWSER_SUBTYPE_TATE
+        bool "OMAP4 Bowser based Tate sub-type board"
+        select MACH_OMAP4_BOWSER
+        depends on ARCH_OMAP4
 
 config OMAP3_EMU
 	bool "OMAP3 debugging peripherals"
@@ -409,6 +424,13 @@ config OMAP_FIQ_DEBUGGER
 config OMAP_REBOOT_REASON
 	depends on ARCH_OMAP4
 	bool
+config DDR_CHIP_SELECT_1
+	bool  "Enable one chip select required for DDR"
+	depends on ARCH_OMAP4
+	default n
+	help
+	  Select this option to select one chip select for DDR.
+	  Which means that it has 1 CS, 10 COL and 14 ROWS.
 
 config OMAP_RAM_CONSOLE
         bool "Enable OMAP support for Android RAM console"
@@ -419,6 +441,50 @@ config OMAP_RAM_CONSOLE
           that after a kernel panic they can be viewed in the next kernel
           invocation, by accessing /proc/last_kmsg
           NOTE: Board file needs to invoke relevant api to enable the support
+
+config OMAP4_PPA_CPU1_ONLINE_BUG
+	bool "Enable Support for CPU1 ONLINE WA for OSWR/OFF"
+	depends on ARCH_OMAP4
+	depends on OMAP_ALLOW_OSWR
+	default y
+	help
+	  If an non GP OMAP4 device is used and PPA revision is < v1.7.3,
+	  the device does not perform the memory maintenance and TLB sync
+	  operations required before releasing CPU1 to HLOS. This results
+	  in crash while resuming from OFF mode.
+
+	  Disable this option *ONLY IF* you meet the minimum PPA version
+	  requirement.
+
+	  If, on the other hand, you do not understand the change, leave the
+	  default as enabled.
+
+config OMAP4_ARM_ERRATA_742230
+	bool "Enables the workaround for ARM errata 742230 on GP devices"
+	default y
+	help
+	  Enables the ARM errata 742230 on OMAP443x and OMAP446x (GP) devices.
+	  This involves setting bit 4 of the CP15 diagnostic control register.
+	  This is handled for HS devices in the PPA code and does not need to be
+	  enabled."
+
+config OMAP4_ARM_ERRATA_751472
+	bool "Enables the workaround for ARM errata 751472 on GP devices"
+	default y
+	help
+	  Enables the ARM errata 751472 on OMAP443x and OMAP446x (GP) devices.
+	  This involves setting bit 11 of the CP15 diagnostic control register.
+	  This is handled for HS devices in the PPA code and does not need to be
+	  enabled."
+
+config OMAP4_ARM_ERRATA_743622
+	bool "Enabled the workaround for ARM errata 743622 on GP devices"
+	default y
+	help
+	  Enables the workaround for ARM errata 743622 on OMAP4.
+	  This involves setting bit 6 of the CP15 diagnostic control register.
+	  This is handled for HS devices in the PPA code and does not need to be
+	  enabled."
 
 endmenu
 

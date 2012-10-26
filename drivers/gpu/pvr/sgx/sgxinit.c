@@ -25,6 +25,7 @@
  ******************************************************************************/
 
 #include <stddef.h>
+#include <linux/trapz.h>
 
 #include "sgxdefs.h"
 #include "sgxmmu.h"
@@ -1354,8 +1355,6 @@ IMG_BOOL SGX_ISRHandler (IMG_VOID *pvData)
 {
 	IMG_BOOL bInterruptProcessed = IMG_FALSE;
 
-
-	
 	{
 		IMG_UINT32 ui32EventStatus, ui32EventEnable;
 		IMG_UINT32 ui32EventClear = 0;

@@ -459,11 +459,6 @@ static u32 tf_rpc_init(struct tf_comm *comm)
 
 	spin_lock(&(comm->lock));
 
-	dmac_flush_range((void *)comm->l1_buffer,
-		(void *)(((u32)(comm->l1_buffer)) + PAGE_SIZE));
-	outer_inv_range(__pa(comm->l1_buffer),
-		__pa(comm->l1_buffer) +  PAGE_SIZE);
-
 	protocol_version = comm->l1_buffer->protocol_version;
 
 	if ((GET_PROTOCOL_MAJOR_VERSION(protocol_version))
@@ -676,7 +671,6 @@ int tf_start(struct tf_comm *comm,
 	cpumask_t saved_cpu_mask;
 	cpumask_t local_cpu_mask = CPU_MASK_NONE;
 
-	/* OMAP4 Secure ROM Code can only be called from CPU0. */
 	cpu_set(0, local_cpu_mask);
 	sched_getaffinity(0, &saved_cpu_mask);
 	ret_affinity = sched_setaffinity(0, &local_cpu_mask);

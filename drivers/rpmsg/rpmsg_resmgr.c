@@ -31,6 +31,8 @@
 #include <linux/debugfs.h>
 #include <linux/rpmsg_resmgr.h>
 #include <linux/pm_runtime.h>
+#include <linux/cpufreq.h>
+#include <linux/trapz.h>
 #include <plat/dmtimer.h>
 #include <plat/rpres.h>
 #include <plat/clock.h>
@@ -214,7 +216,6 @@ static int rprm_auxclk_request(struct rprm_elem *e, struct rprm_auxclk *obj)
 	if (ret) {
 		pr_err("%s: rate not supported by %s\n", __func__,
 					clk_src_name[obj->parent_src_clk]);
-		ret = -EINVAL;
 		goto error_aux_src_parent;
 	}
 
@@ -236,7 +237,7 @@ static int rprm_auxclk_request(struct rprm_elem *e, struct rprm_auxclk *obj)
 	ret = clk_set_rate(acd->aux_clk, (obj->clk_rate * MHZ));
 	if (ret) {
 		pr_err("%s: rate not supported by %s\n", __func__, clk_name);
-		goto error_aux_src_parent;
+		goto error_aux_enable;
 	}
 
 	ret = clk_enable(acd->aux_clk);
@@ -553,6 +554,22 @@ int _set_constraints(struct rprm_elem *e, struct rprm_constraints_data *c)
 	}
 
 	if (c->mask & RPRM_SCALE) {
+		TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmConstraintFrequency,
+			       "rpmsg resource manager: Set frequency constraint for resource");
+		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmConstraintFrequency,
+				 "Type %d Frequency %d", e->type, c->frequency);
+
+		if (e->type == RPRM_IVAHD) {
+			/*
+			 * Use IVAHD frequency as a secondary hint for cpufreq governor.
+			 * When video is paused the IVAHD should be clock gated.
+			 */
+			if (c->frequency)
+				send_video_hint(1);
+			else
+				send_video_hint(0);
+		}
+
 		ret = _set_constraints_func(e, RPRM_SCALE, c->frequency);
 		if (ret)
 			goto err;
@@ -561,6 +578,11 @@ int _set_constraints(struct rprm_elem *e, struct rprm_constraints_data *c)
 	}
 
 	if (c->mask & RPRM_LATENCY) {
+		TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmConstraintLatency,
+			       "rpmsg resource manager: Set latency constraint for resource");
+		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmConstraintLatency,
+				 "Type %d Latency %d", e->type, c->latency);
+
 		ret = _set_constraints_func(e, RPRM_LATENCY, c->latency);
 		if (ret)
 			goto err;
@@ -569,6 +591,11 @@ int _set_constraints(struct rprm_elem *e, struct rprm_constraints_data *c)
 	}
 
 	if (c->mask & RPRM_BANDWIDTH) {
+		TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmConstraintBandwidth,
+			       "rpmsg resource manager: Set bandwidth constraint for resource");
+		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmConstraintBandwidth,
+				 "Type %d Bandwidth %d", e->type, c->bandwidth);
+
 		ret = _set_constraints_func(e, RPRM_BANDWIDTH, c->bandwidth);
 		if (ret)
 			goto err;
@@ -740,6 +767,21 @@ static int rprm_resource_free(struct rprm *rprm, u32 addr, int res_id)
 		ret = -ENOENT;
 		goto out;
 	}
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmResourceFree,
+		       "rpmsg resource manager: Free a resource");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmResourceFree,
+			 "Type %d addr %d", e->type, addr);
+
+	if (e->type == RPRM_IVAHD) {
+		/*
+		 * Hint cpufreq governor that we have finished decoding
+		 * video. (In fact IVAHD is also in use when we are encoding
+		 * but that is OK.)
+		 */
+		send_video_hint(0);
+	}
+
 	idr_remove(&rprm->id_list, res_id);
 	list_del(&e->next);
 out:
@@ -836,6 +878,19 @@ static int rprm_resource_alloc(struct rprm *rprm, u32 addr, int *res_id,
 	ret = idr_get_new(&rprm->id_list, e, res_id);
 	if (ret)
 		goto err;
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_RPMSG, RprmResourceAlloc,
+		       "rpmsg resource manager: Allocate a new resource");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_RPMSG, RprmResourceAlloc,
+			 "Type %d addr %d", type, addr);
+
+	if (e->type == RPRM_IVAHD) {
+		/*
+		 * Hint cpufreq governor that we have begun decoding video. (In
+		 * fact IVAHD is also in use when we are encoding but that is OK.)
+		 */
+		send_video_hint(1);
+	}
 
 	e->type = type;
 	e->src = addr;

@@ -54,5 +54,32 @@ config PANEL_TC358765
 	depends on OMAP2_DSS_DSI && I2C
 	select BACKLIGHT_CLASS_DEVICE
 	help
-	  Toshiba TC358765 DSI-2-LVDS chip with 1024x768 panel
+	  Toshiba TC358765 DSI-2-LVDS chip
+
+config PANEL_LG_LD089WX1
+       tristate "LG 1280x768  WUXGA LCD Panel"
+       depends on OMAP2_DSS_DSI && PANEL_TC358765
+       help
+        LCD Panel used by Lab126
+
+config PANEL_SAMSUNG_LTL089CL01
+       tristate "Samsung 1920x1200 WUXGA LCD Panel"
+       depends on OMAP2_DSS_DSI && PANEL_TC358765
+       help
+        LCD Panel used by Lab126
+
+config PANEL_NT71391_HYDIS
+	tristate "NT71391 Hydis 1920x1200 WUXGA DSI LCD Panel"
+	depends on OMAP2_DSS_DSI
+	select BACKLIGHT_CLASS_DEVICE
+	help
+	  MIPI DSI LCD Panel used by Lab126
+
+config PANEL_NT51012_LG
+	tristate "NT51012 LG 800x1280 DSI LCD Panel"
+	depends on OMAP2_DSS_DSI
+	select BACKLIGHT_CLASS_DEVICE
+	help
+	  MIPI DSI LCD Panel used by Lab126
+
 endmenu

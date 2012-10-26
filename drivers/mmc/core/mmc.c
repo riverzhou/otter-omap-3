@@ -951,6 +951,10 @@ static int mmc_sleep(struct mmc_host *host)
 	struct mmc_card *card = host->card;
 	int err = -ENOSYS;
 
+	//If Manufacturer ID is Samsung (0x15), bypass Sleep command transmission as Samsung EMMC goes automatically in sleep mode (HW feature) 
+        if(card->cid.manfid == 0x15)
+        return 0;
+
 	if (card && card->ext_csd.rev >= 3) {
 		err = mmc_card_sleepawake(host, 1);
 		if (err < 0)
@@ -965,6 +969,10 @@ static int mmc_awake(struct mmc_host *host)
 {
 	struct mmc_card *card = host->card;
 	int err = -ENOSYS;
+
+	//If Manufacturer ID is Samsung (0x15), bypass Sleep command transmission as Samsung EMMC goes automatically in awake mode(HW feature)  
+        if(card->cid.manfid == 0x15)
+        return 0;
 
 	if (card && card->ext_csd.rev >= 3) {
 		err = mmc_card_sleepawake(host, 0);

@@ -568,6 +568,58 @@ static ssize_t show_bios_limit(struct cpufreq_policy *policy, char *buf)
 	return sprintf(buf, "%u\n", policy->cpuinfo.max_freq);
 }
 
+static ssize_t store_video_hint(struct cpufreq_policy *policy,
+					const char *buf, size_t count)
+{
+	unsigned int hint;
+	unsigned int ret;
+
+	if (!policy->governor || !policy->governor->store_video_hint)
+		return -EINVAL;
+
+	ret = sscanf(buf, "%u", &hint);
+	if (ret != 1)
+		return -EINVAL;
+
+	policy->governor->store_video_hint(policy, !!hint);
+
+	return count;
+}
+
+static ssize_t show_video_hint(struct cpufreq_policy *policy, char *buf)
+{
+	if (!policy->governor || !policy->governor->show_video_hint)
+		return sprintf(buf, "<unsupported>\n");
+
+	return policy->governor->show_video_hint(buf);
+}
+
+static ssize_t store_panel_hint(struct cpufreq_policy *policy,
+					const char *buf, size_t count)
+{
+	unsigned int hint;
+	unsigned int ret;
+
+	if (!policy->governor || !policy->governor->store_panel_hint)
+		return -EINVAL;
+
+	ret = sscanf(buf, "%u", &hint);
+	if (ret != 1)
+		return -EINVAL;
+
+	policy->governor->store_panel_hint(policy, !!hint);
+
+	return count;
+}
+
+static ssize_t show_panel_hint(struct cpufreq_policy *policy, char *buf)
+{
+	if (!policy->governor || !policy->governor->show_panel_hint)
+		return sprintf(buf, "<unsupported>\n");
+
+	return policy->governor->show_panel_hint(buf);
+}
+
 cpufreq_freq_attr_ro_perm(cpuinfo_cur_freq, 0400);
 cpufreq_freq_attr_ro(cpuinfo_min_freq);
 cpufreq_freq_attr_ro(cpuinfo_max_freq);
@@ -582,6 +634,8 @@ cpufreq_freq_attr_rw(scaling_min_freq);
 cpufreq_freq_attr_rw(scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
+cpufreq_freq_attr_rw(video_hint);
+cpufreq_freq_attr_rw(panel_hint);
 
 static struct attribute *default_attrs[] = {
 	&cpuinfo_min_freq.attr,
@@ -595,6 +649,8 @@ static struct attribute *default_attrs[] = {
 	&scaling_driver.attr,
 	&scaling_available_governors.attr,
 	&scaling_setspeed.attr,
+	&video_hint.attr,
+	&panel_hint.attr,
 	NULL
 };
 
@@ -603,6 +659,60 @@ EXPORT_SYMBOL(cpufreq_global_kobject);
 
 #define to_policy(k) container_of(k, struct cpufreq_policy, kobj)
 #define to_attr(a) container_of(a, struct freq_attr, attr)
+
+/**
+ * send_video_hint - provide video hint to governor
+ */
+void send_video_hint(int hint)
+{
+	struct cpufreq_policy *policy;
+
+	policy = cpufreq_cpu_get(0);
+	if (!policy)
+		return;
+
+	if (lock_policy_rwsem_write(policy->cpu) < 0)
+		goto fail;
+
+	if (!policy->governor || !policy->governor->store_video_hint)
+		goto fail_unlock;
+
+	policy->governor->store_video_hint(policy, !!hint);
+
+fail_unlock:
+	unlock_policy_rwsem_write(policy->cpu);
+fail:
+	cpufreq_cpu_put(policy);
+	return;
+}
+EXPORT_SYMBOL(send_video_hint);
+
+/**
+ * send_panel_hint - provide panel hint to governor
+ */
+void send_panel_hint(int hint)
+{
+	struct cpufreq_policy *policy;
+
+	policy = cpufreq_cpu_get(0);
+	if (!policy)
+		return;
+
+	if (lock_policy_rwsem_write(policy->cpu) < 0)
+		goto fail;
+
+	if (!policy->governor || !policy->governor->store_panel_hint)
+		goto fail_unlock;
+
+	policy->governor->store_panel_hint(policy, !!hint);
+
+fail_unlock:
+	unlock_policy_rwsem_write(policy->cpu);
+fail:
+	cpufreq_cpu_put(policy);
+	return;
+}
+EXPORT_SYMBOL(send_panel_hint);
 
 static ssize_t show(struct kobject *kobj, struct attribute *attr, char *buf)
 {

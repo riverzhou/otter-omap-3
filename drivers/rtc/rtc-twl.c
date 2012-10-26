@@ -112,6 +112,7 @@ static const u8 twl6030_rtc_reg_map[] = {
 #define BIT_RTC_CTRL_REG_TEST_MODE_M             0x10
 #define BIT_RTC_CTRL_REG_SET_32_COUNTER_M        0x20
 #define BIT_RTC_CTRL_REG_GET_TIME_M              0x40
+#define BIT_RTC_CTRL_REG_RTC_V_OPT               0x80
 
 /* RTC_STATUS_REG bitfields */
 #define BIT_RTC_STATUS_REG_RUN_M                 0x02
@@ -227,23 +228,55 @@ static int twl_rtc_read_time(struct device *dev, struct rtc_time *tm)
 	unsigned char rtc_data[ALL_TIME_REGS + 1];
 	int ret;
 	u8 save_control;
+	u8 rtc_control;
 
 	ret = twl_rtc_read_u8(&save_control, REG_RTC_CTRL_REG);
-	if (ret < 0)
+	if (ret < 0) {
+		dev_err(dev, "%s: reading CTRL_REG, error %d\n", __func__, ret);
 		return ret;
+	}
+	/* for twl6030/32 make sure BIT_RTC_CTRL_REG_GET_TIME_M is clear */
+	if (twl_class_is_6030()) {
+		if (save_control & BIT_RTC_CTRL_REG_GET_TIME_M) {
+			save_control &= ~BIT_RTC_CTRL_REG_GET_TIME_M;
+			ret = twl_rtc_write_u8(save_control, REG_RTC_CTRL_REG);
+			if (ret < 0) {
+				dev_err(dev, "%s, writing CTRL_REG, error %d\n",
+						__func__, ret);
+				return ret;
+			}
+		}
+	}
 
-	save_control |= BIT_RTC_CTRL_REG_GET_TIME_M;
+	/* Copy RTC counting registers to static registers or latches */
+	rtc_control = save_control | BIT_RTC_CTRL_REG_GET_TIME_M;
 
-	ret = twl_rtc_write_u8(save_control, REG_RTC_CTRL_REG);
-	if (ret < 0)
+	/* for twl6030/32 enable read access to static shadowed registers */
+	if (twl_class_is_6030())
+		rtc_control |= BIT_RTC_CTRL_REG_RTC_V_OPT;
+
+	ret = twl_rtc_write_u8(rtc_control, REG_RTC_CTRL_REG);
+	if (ret < 0) {
+		dev_err(dev, "%s: writing CTRL_REG, error %d\n", __func__, ret);
 		return ret;
+	}
 
 	ret = twl_i2c_read(TWL_MODULE_RTC, rtc_data,
 			(rtc_reg_map[REG_SECONDS_REG]), ALL_TIME_REGS);
 
 	if (ret < 0) {
-		dev_err(dev, "rtc_read_time error %d\n", ret);
+		dev_err(dev, "%s: reading data, error %d\n", __func__, ret);
 		return ret;
+	}
+
+	/* for twl6030 restore original state of rtc control register */
+	if (twl_class_is_6030()) {
+		ret = twl_rtc_write_u8(save_control, REG_RTC_CTRL_REG);
+		if (ret < 0) {
+			dev_err(dev, "%s: writing CTRL_REG, error %d\n",
+					__func__, ret);
+			return ret;
+		}
 	}
 
 	tm->tm_sec = bcd2bin(rtc_data[0]);
@@ -329,10 +362,15 @@ static int twl_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alm)
 {
 	unsigned char alarm_data[ALL_TIME_REGS + 1];
 	int ret;
+	struct timespec ts;
+	struct rtc_time tm;
 
 	ret = twl_rtc_alarm_irq_enable(dev, 0);
 	if (ret)
 		goto out;
+
+	if (! alm->enabled)
+		return ret; // No need to go further. We have already disabled the alarm IRQ
 
 	alarm_data[1] = bin2bcd(alm->time.tm_sec);
 	alarm_data[2] = bin2bcd(alm->time.tm_min);
@@ -349,8 +387,21 @@ static int twl_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alm)
 		goto out;
 	}
 
-	if (alm->enabled)
-		ret = twl_rtc_alarm_irq_enable(dev, 1);
+	// Logging alarm configured before going into suspend
+	getnstimeofday(&ts);
+	rtc_time_to_tm(ts.tv_sec, &tm);
+
+	pr_info("RTC: Alarm set to %d-%02d-%02d %02d:%02d:%02d. (Now is: %d-%02d-%02d %02d:%02d:%02d UTC)\n",
+		alm->time.tm_year + 1900,
+		alm->time.tm_mon + 1,
+		alm->time.tm_mday,
+		alm->time.tm_hour,
+		alm->time.tm_min,
+		alm->time.tm_sec,
+		tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+		tm.tm_hour, tm.tm_min, tm.tm_sec);
+
+	ret = twl_rtc_alarm_irq_enable(dev, 1);
 out:
 	return ret;
 }
@@ -526,9 +577,14 @@ static int __devexit twl_rtc_remove(struct platform_device *pdev)
 
 static void twl_rtc_shutdown(struct platform_device *pdev)
 {
-	/* mask timer interrupts, but leave alarm interrupts on to enable
-	   power-on when alarm is triggered */
-	mask_rtc_irq_bit(BIT_RTC_INTERRUPTS_REG_IT_TIMER_M);
+	/* mask timer interrupts */
+	u8 rtc_int_reg_mask = BIT_RTC_INTERRUPTS_REG_IT_TIMER_M;
+#ifdef CONFIG_LAB126
+	/* Mask alarm interrupt: power-on upon alarm going off is not supported on LAB126 devices */
+	rtc_int_reg_mask |= BIT_RTC_INTERRUPTS_REG_IT_ALARM_M;
+#endif
+
+	mask_rtc_irq_bit(rtc_int_reg_mask);
 }
 
 #ifdef CONFIG_PM

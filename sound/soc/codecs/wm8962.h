@@ -13,6 +13,7 @@
 #ifndef _WM8962_H
 #define _WM8962_H
 
+#include <linux/gpio.h>
 #include <asm/types.h>
 #include <sound/soc.h>
 
@@ -3776,5 +3777,53 @@
 #define WM8962_VSS_ENA_WIDTH                         1  /* VSS_ENA */
 
 int wm8962_mic_detect(struct snd_soc_codec *codec, struct snd_soc_jack *jack);
+int wm8962_get_jack(struct snd_soc_codec *codec, struct snd_soc_jack *jack);
+
+#define WM8962_NUM_SUPPLIES 8
+static const char *wm8962_supply_names[WM8962_NUM_SUPPLIES] = {
+	"DCVDD",
+	"DBVDD",
+	"AVDD",
+	"CPVDD",
+	"MICVDD",
+	"PLLVDD",
+	"SPKVDD1",
+	"SPKVDD2",
+};
+
+/* codec private data */
+struct wm8962_priv {
+	struct snd_soc_codec *codec;
+
+	int sysclk;
+	int sysclk_rate;
+
+	int bclk;  /* Desired BCLK */
+	int lrclk;
+
+	struct completion fll_lock;
+	int fll_src;
+	int fll_fref;
+	int fll_fout;
+
+	struct delayed_work boot_work, mic_work, hook_switch_work, minus_plus_work;
+	struct snd_soc_jack *jack;
+	int insert_gpio;
+
+	struct regulator_bulk_data supplies[WM8962_NUM_SUPPLIES];
+	struct notifier_block disable_nb[WM8962_NUM_SUPPLIES];
+
+#if defined(CONFIG_INPUT) || defined(CONFIG_INPUT_MODULE)
+	struct input_dev *beep;
+	struct work_struct beep_work;
+	int beep_rate;
+#endif
+
+#ifdef CONFIG_GPIOLIB
+	struct gpio_chip gpio_chip;
+#endif
+	bool insertion;
+	bool iphone;
+};
 
 #endif

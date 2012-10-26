@@ -40,6 +40,21 @@
 #include <linux/suspend.h>
 #include <linux/reboot.h>
 
+#if defined(CONFIG_WAKELOCK)
+#include <linux/wakelock.h>
+#endif
+
+#if defined(CONFIG_LAB126)
+/* Threshold set to 3.35 V = 2.3 V + (0x1b * 0.05 V) */
+#define VBATMIN_HI_THRESHOLD (0x1b)
+
+/*
+ * On a low battery interrupt, prevent the system
+ * from going into suspend for 30 seconds
+ */
+#define LOW_BATT_WAKELOCK_HOLD_TIME (30)
+#endif
+
 #include "twl-core.h"
 
 /*
@@ -93,6 +108,10 @@ static struct completion irq_event;
 static atomic_t twl6030_wakeirqs = ATOMIC_INIT(0);
 
 static u8 vbatmin_hi_threshold;
+
+#if defined(CONFIG_WAKELOCK)
+static struct wake_lock vlow_wakelock;
+#endif
 
 static int twl6030_irq_pm_notifier(struct notifier_block *notifier,
 				   unsigned long pm_event, void *unused)
@@ -192,8 +211,17 @@ static int twl6030_irq_thread(void *data)
 			}
 		local_irq_enable();
 		}
-		ret = twl_i2c_write(TWL_MODULE_PIH, sts.bytes,
-				REG_INT_STS_A, 3); /* clear INT_STS_A */
+
+		/*
+		 * NOTE:
+		 * Simulation confirms that documentation is wrong w.r.t the
+		 * interrupt status clear operation. A single *byte* write to
+		 * any one of STS_A to STS_C register results in all three
+		 * STS registers being reset. Since it does not matter which
+		 * value is written, all three registers are cleared on a
+		 * single byte write, so we just use 0x0 to clear.
+		 */
+		ret = twl_i2c_write_u8(TWL_MODULE_PIH, 0x00, REG_INT_STS_A);
 		if (ret)
 			pr_warning("twl6030: I2C error in clearing PIH ISR\n");
 
@@ -230,8 +258,19 @@ static irqreturn_t handle_twl6030_vlow(int irq, void *unused)
 
 #if 1 /* temporary */
 	pr_err("%s: disabling BAT_VLOW interrupt\n", __func__);
+#if defined(CONFIG_WAKELOCK) && defined(CONFIG_LAB126)
+	/*
+	 * Prevent the system from going back to suspend,
+	 * this should be enough to trigger a low battery shutdown
+	 */
+	wake_lock_timeout(&vlow_wakelock,
+		msecs_to_jiffies(LOW_BATT_WAKELOCK_HOLD_TIME));
+	/* Mask the low battery interrupt */
+	twl6030_interrupt_mask(VLOW_INT_MASK, REG_INT_MSK_STS_A);
+#else
 	disable_irq_nosync(twl6030_irq_base + TWL_VLOW_INTR_OFFSET);
 	WARN_ON(1);
+#endif
 #else
 	pr_emerg("handle_twl6030_vlow: kernel_power_off()\n");
 	kernel_power_off();
@@ -413,6 +452,7 @@ int twl6030_vlow_init(int vlow_irq)
 		return status;
 	}
 
+#if !defined(CONFIG_LAB126)
 	status = twl_i2c_read_u8(TWL_MODULE_PIH, &val, REG_INT_MSK_STS_A);
 	if (status < 0) {
 		pr_err("twl6030: I2C err reading REG_INT_MSK_STS_A: %d\n",
@@ -430,6 +470,13 @@ int twl6030_vlow_init(int vlow_irq)
 
 	twl_i2c_read_u8(TWL_MODULE_PM_MASTER, &vbatmin_hi_threshold,
 			TWL6030_VBATMIN_HI_THRESHOLD);
+#else
+	/* Set the desired low battery threshold */
+	vbatmin_hi_threshold = VBATMIN_HI_THRESHOLD;
+
+	twl_i2c_write_u8(TWL_MODULE_PM_MASTER, vbatmin_hi_threshold,
+			TWL6030_VBATMIN_HI_THRESHOLD);
+#endif
 
 	/* install an irq handler for vlow */
 	status = request_threaded_irq(vlow_irq, NULL, handle_twl6030_vlow,
@@ -440,6 +487,10 @@ int twl6030_vlow_init(int vlow_irq)
 				status);
 		return status;
 	}
+
+#if defined(CONFIG_WAKELOCK)
+	wake_lock_init(&vlow_wakelock, WAKE_LOCK_SUSPEND, "low_batt");
+#endif
 
 	return 0;
 }
@@ -525,6 +576,9 @@ fail_kthread:
 int twl6030_exit_irq(void)
 {
 	int i;
+#if defined(CONFIG_WAKELOCK)
+	wake_lock_destroy(&vlow_wakelock);
+#endif
 	unregister_pm_notifier(&twl6030_irq_pm_notifier_block);
 
 	if (task)

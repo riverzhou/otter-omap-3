@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011 Trusted Logic S.A.
+ * Copyright (c) 2010 Trusted Logic S.A.
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -44,7 +44,7 @@
 * If this is a patch or engineering version use the following
 * defines to set the version number. Else set these values to 0.
 */
-#define S_VERSION_ENG 1
+#define S_VERSION_ENG 0
 #define S_VERSION_PATCH 0
 
 #ifdef S_VERSION_BUILD

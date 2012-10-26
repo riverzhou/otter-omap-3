@@ -428,7 +428,8 @@ void dispc_set_plane_size(enum omap_plane plane, u16 width, u16 height);
 void dispc_set_channel_out(enum omap_plane plane,
 		enum omap_channel channel_out);
 
-void dispc_enable_gamma_table(bool enable);
+void dispc_load_gamma_table(enum omap_channel channel, bool enable, u8 gamma);
+void dispc_load_gamma_tv_table(bool enable, u8 gamma);
 int dispc_setup_plane(enum omap_plane plane,
 		      u32 paddr, u16 screen_width,
 		      u16 pos_x, u16 pos_y,
@@ -477,6 +478,7 @@ void dispc_get_trans_key(enum omap_channel ch,
 		u32 *trans_key);
 void dispc_enable_trans_key(enum omap_channel ch, bool enable);
 void dispc_enable_alpha_blending(enum omap_channel ch, bool enable);
+int  dispc_enable_gamma(enum omap_channel ch, u8 gamma_value);
 bool dispc_trans_key_enabled(enum omap_channel ch);
 bool dispc_alpha_blending_enabled(enum omap_channel ch);
 
@@ -554,6 +556,7 @@ int omapdss_hdmi_get_s3d_enable(void);
 int hdmi_get_current_hpd(void);
 void hdmi_get_monspecs(struct fb_monspecs *specs);
 u8 *hdmi_read_edid(struct omap_video_timings *);
+void hdmi_set_edid_state(bool val);
 
 int hdmi_panel_init(void);
 void hdmi_panel_exit(void);
@@ -561,6 +564,10 @@ void hdmi_dump_regs(struct seq_file *s);
 int omapdss_hdmi_register_hdcp_callbacks(void (*hdmi_start_frame_cb)(void),
 					 void (*hdmi_irq_cb)(int status),
 					 bool (*hdmi_power_on_cb)(void));
+#ifdef CONFIG_HDMI_CERT_DEBUG
+extern struct device_attribute dev_attr_hdmi_timings;
+#endif
+
 int omap_dss_ovl_set_info(struct omap_overlay *ovl,
 		struct omap_overlay_info *info);
 

@@ -104,6 +104,7 @@
 #include <linux/route.h>
 #include <linux/sockios.h>
 #include <linux/atalk.h>
+#include <linux/trapz.h>
 
 static int sock_no_open(struct inode *irrelevant, struct file *dontcare);
 static ssize_t sock_aio_read(struct kiocb *iocb, const struct iovec *iov,
@@ -560,9 +561,25 @@ static inline int __sock_sendmsg_nosec(struct kiocb *iocb, struct socket *sock,
 static inline int __sock_sendmsg(struct kiocb *iocb, struct socket *sock,
 				 struct msghdr *msg, size_t size)
 {
+	int send;
 	int err = security_socket_sendmsg(sock, msg, size);
 
-	return err ?: __sock_sendmsg_nosec(iocb, sock, msg, size);
+	send = err ?: __sock_sendmsg_nosec(iocb, sock, msg, size);
+#ifdef ENABLE_TRAPZ
+	/* We only care about Android processes (for now).
+	 * Processes with a ppid greater than 2 are Android processes.
+	 * Those with ppids of 1 or 2 are generally various daemons.
+	 *
+	 * We also only carry about tcp and udp sockets.
+	 */
+	if (send > 0 && current->parent->pid > 2 &&
+			(sock->sk->sk_family == AF_INET || sock->sk->sk_family == AF_INET6) &&
+			(sock->type == SOCK_STREAM || sock->type == SOCK_DGRAM)) {
+		TRAPZ_DESCRIBE(TRAPZ_KERN_NET_SOCK, Write, "Write to a socket");
+		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_NET_SOCK, Write, "Bytes written: %d", send, 0);
+	}
+#endif /* ENABLE_TRAPZ */
+	return send;
 }
 
 int sock_sendmsg(struct socket *sock, struct msghdr *msg, size_t size)
@@ -693,6 +710,7 @@ EXPORT_SYMBOL_GPL(__sock_recv_ts_and_drops);
 static inline int __sock_recvmsg_nosec(struct kiocb *iocb, struct socket *sock,
 				       struct msghdr *msg, size_t size, int flags)
 {
+	int rcv;
 	struct sock_iocb *si = kiocb_to_siocb(iocb);
 
 	sock_update_classid(sock->sk);
@@ -703,7 +721,22 @@ static inline int __sock_recvmsg_nosec(struct kiocb *iocb, struct socket *sock,
 	si->size = size;
 	si->flags = flags;
 
-	return sock->ops->recvmsg(iocb, sock, msg, size, flags);
+	rcv = sock->ops->recvmsg(iocb, sock, msg, size, flags);
+#ifdef ENABLE_TRAPZ
+	/* We only care about Android processes (for now).
+	 * Processes with a ppid greater than 2 are Android processes.
+	 * Those with ppids of 1 or 2 are generally various daemons.
+	 *
+	 * We also only carry about tcp and udp sockets.
+	 */
+	if (rcv > 0 && current->parent->pid > 2 &&
+			(sock->sk->sk_family == AF_INET || sock->sk->sk_family == AF_INET6) &&
+			(sock->type == SOCK_STREAM || sock->type == SOCK_DGRAM)) {
+		TRAPZ_DESCRIBE(TRAPZ_KERN_NET_SOCK, Read, "Read from a socket");
+		TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_NET_SOCK, Read, "Bytes read: %d", rcv, 0);
+	}
+#endif /* ENABLE_TRAPZ */
+	return rcv;
 }
 
 static inline int __sock_recvmsg(struct kiocb *iocb, struct socket *sock,

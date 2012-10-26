@@ -63,6 +63,7 @@ struct getcpu_cache;
 struct old_linux_dirent;
 struct perf_event_attr;
 struct file_handle;
+struct trapz_info;
 
 #include <linux/types.h>
 #include <linux/aio_abi.h>
@@ -847,4 +848,6 @@ asmlinkage long sys_open_by_handle_at(int mountdirfd,
 				      struct file_handle __user *handle,
 				      int flags);
 asmlinkage long sys_setns(int fd, int nstype);
+
+asmlinkage long sys_trapz(int scenario, int tag, int extra1, int extra2, int reserved, struct trapz_info __user *ti);
 #endif

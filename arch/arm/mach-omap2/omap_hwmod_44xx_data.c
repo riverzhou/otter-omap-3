@@ -5745,6 +5745,11 @@ static struct omap_hwmod_class_sysconfig omap44xx_wd_timer_sysc = {
 	.sysc_fields	= &omap_hwmod_sysc_type1,
 };
 
+static struct omap_hwmod_class omap44xx_wd2_timer_hwmod_class = {
+	.name		= "wd_timer",
+	.sysc		= &omap44xx_wd_timer_sysc,
+};
+
 static struct omap_hwmod_class omap44xx_wd_timer_hwmod_class = {
 	.name		= "wd_timer",
 	.sysc		= &omap44xx_wd_timer_sysc,
@@ -5782,7 +5787,8 @@ static struct omap_hwmod_ocp_if *omap44xx_wd_timer2_slaves[] = {
 
 static struct omap_hwmod omap44xx_wd_timer2_hwmod = {
 	.name		= "wd_timer2",
-	.class		= &omap44xx_wd_timer_hwmod_class,
+	.class		= &omap44xx_wd2_timer_hwmod_class,
+	.flags		= HWMOD_INIT_NO_RESET,
 	.mpu_irqs	= omap44xx_wd_timer2_irqs,
 	.mpu_irqs_cnt	= ARRAY_SIZE(omap44xx_wd_timer2_irqs),
 	.main_clk	= "wd_timer2_fck",

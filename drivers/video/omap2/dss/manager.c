@@ -36,6 +36,7 @@
 
 #include "dss.h"
 #include "dss_features.h"
+#include <linux/trapz.h>
 
 static int num_managers;
 static struct list_head manager_list;
@@ -383,6 +384,28 @@ static ssize_t manager_cpr_coef_store(struct omap_overlay_manager *mgr,
 
 	return size;
 }
+static ssize_t manager_gamma_show(
+		struct omap_overlay_manager *mgr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", mgr->info.gamma);
+}
+
+static ssize_t manager_gamma_store(
+		struct omap_overlay_manager *mgr,
+		const char *buf, size_t size)
+{
+	int gamma_value;
+
+	if (sscanf(buf, "%d", &gamma_value) != 1)
+		return -EINVAL;
+
+	if (mgr->device)
+		dispc_enable_gamma(mgr->device->channel, gamma_value);
+	else
+		return -EINVAL;
+
+	return size;
+}
 
 struct manager_attribute {
 	struct attribute attr;
@@ -416,6 +439,9 @@ static MANAGER_ATTR(cpr_coef, S_IRUGO|S_IWUSR,
 		manager_cpr_coef_show,
 		manager_cpr_coef_store);
 
+static MANAGER_ATTR(gamma, S_IRUGO|S_IWUSR,
+			manager_gamma_show,
+			manager_gamma_store);
 
 static struct attribute *manager_sysfs_attrs[] = {
 	&manager_attr_name.attr,
@@ -427,6 +453,7 @@ static struct attribute *manager_sysfs_attrs[] = {
 	&manager_attr_alpha_blending_enabled.attr,
 	&manager_attr_cpr_enable.attr,
 	&manager_attr_cpr_coef.attr,
+	&manager_attr_gamma.attr,
 	NULL
 };
 
@@ -570,6 +597,7 @@ struct manager_cache_data {
 
 	enum omap_dss_trans_key_type trans_key_type;
 	u32 trans_key;
+	u8 gamma;
 	bool trans_enabled;
 
 	bool alpha_enabled;
@@ -1426,9 +1454,9 @@ static void dss_completion_irq_handler(void *data, u32 mask)
 	const int num_mgrs = MAX_DSS_MANAGERS;
 	const u32 masks[] = {
 		DISPC_IRQ_FRAMEDONE | DISPC_IRQ_VSYNC,
-		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2,
 		DISPC_IRQ_FRAMEDONETV | DISPC_IRQ_EVSYNC_EVEN |
-		DISPC_IRQ_EVSYNC_ODD
+		DISPC_IRQ_EVSYNC_ODD,
+		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2
 	};
 	int i;
 
@@ -1466,9 +1494,9 @@ static void schedule_completion_irq(void)
 	const int num_mgrs = MAX_DSS_MANAGERS;
 	const u32 masks[] = {
 		DISPC_IRQ_FRAMEDONE | DISPC_IRQ_VSYNC,
-		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2,
 		DISPC_IRQ_FRAMEDONETV | DISPC_IRQ_EVSYNC_EVEN |
-		DISPC_IRQ_EVSYNC_ODD
+		DISPC_IRQ_EVSYNC_ODD,
+		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2
 	};
 	u32 mask = 0;
 	int i;
@@ -1597,6 +1625,9 @@ static void dss_apply_irq_handler(void *data, u32 mask)
 	for (i = 0; i < num_mgrs; i++)
 		mgr_busy[i] |= dispc_go_busy(i);
 
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssIrqHandler, "dss_apply_irq_handler: Handle the VSYNC interrupt - acknole    dge/clear CPU interrput lines");
+        TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssIrqHandler, 0, 0);
+
 	/* keep running as long as there are busy managers, so that
 	 * we can collect overlay-applied information */
 	for (i = 0; i < num_mgrs; ++i) {
@@ -1630,6 +1661,11 @@ static int omap_dss_mgr_blank(struct omap_overlay_manager *mgr,
 	/* still clear cache even if failed to get clocks, just don't config */
 
 	spin_lock_irqsave(&dss_cache.lock, flags);
+
+	/* there is no GO on inactive displays */
+	if (!mgr->device ||
+	    mgr->device->state != OMAP_DSS_DISPLAY_ACTIVE)
+		wait_for_go = false;
 
 	/* disable overlays in overlay info structs and in cache */
 	for (i = 0; i < omap_dss_get_num_overlays(); i++) {
@@ -1696,25 +1732,13 @@ static int omap_dss_mgr_blank(struct omap_overlay_manager *mgr,
 			oc = &dss_cache.overlay_cache[i];
 			if (oc->channel != mgr->id)
 				continue;
-			if (r && oc->dirty)
-				dss_ovl_configure_cb(&oc->cb, i, false);
-			if (oc->shadow_dirty) {
-				dss_ovl_program_cb(&oc->cb, i);
-				oc->dispc_channel = oc->channel;
-				oc->shadow_dirty = false;
-			} else {
-				pr_warn("ovl%d-shadow is not dirty\n", i);
-			}
+			dss_ovl_configure_cb(&oc->cb, i, false);
+			dss_ovl_program_cb(&oc->cb, i);
+			oc->dispc_channel = oc->channel;
 		}
 
-		if (r && mc->dirty)
-			dss_ovl_configure_cb(&mc->cb, i, false);
-		if (mc->shadow_dirty) {
-			dss_ovl_program_cb(&mc->cb, i);
-			mc->shadow_dirty = false;
-		} else {
-			pr_warn("mgr%d-shadow is not dirty\n", mgr->id);
-		}
+		dss_ovl_configure_cb(&mc->cb, i, false);
+		dss_ovl_program_cb(&mc->cb, i);
 	}
 
 	spin_unlock_irqrestore(&dss_cache.lock, flags);
@@ -1892,6 +1916,7 @@ static int omap_dss_mgr_apply(struct omap_overlay_manager *mgr)
 	mc->alpha_enabled = mgr->info.alpha_enabled;
 	mc->cpr_coefs = mgr->info.cpr_coefs;
 	mc->cpr_enable = mgr->info.cpr_enable;
+	mc->gamma = mgr->info.gamma;
 
 	mc->manual_upd_display =
 		dssdev->caps & OMAP_DSS_DISPLAY_CAP_MANUAL_UPDATE;
@@ -1964,6 +1989,9 @@ skip_mgr:
 			BUG();
 		}
 	}
+
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCfgDispCtrl,  "omap_dss_mgr_apply: DSS manager configure the display controller");
+        TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssCfgDispCtrl, 0, 0);
 
 	r = 0;
 	if (!dss_cache.irq_enabled) {

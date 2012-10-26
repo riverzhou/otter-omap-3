@@ -79,7 +79,7 @@ static ssize_t rproc_user_read(struct file *filp, char __user *ubuf,
 
 	if (mutex_lock_interruptible(&rproc_user_mutex))
 		return -EINTR;
-	enable = secure_cnt ? 1 : 0;
+	enable = (u8)filp->private_data;
 	if (copy_to_user((void *)ubuf, &enable, sizeof(enable)))
 		ret = -EFAULT;
 	mutex_unlock(&rproc_user_mutex);
@@ -123,8 +123,7 @@ static ssize_t rproc_user_write(struct file *filp, const char __user *ubuf,
 			ret = rproc_set_secure("ipu", false);
 		if (ret)
 			pr_err("rproc normal start failed 0x%x, urghh!!", ret);
-		else
-			filp->private_data = (void *)0;
+                filp->private_data = (void *)0;
 	}
 	if (enable != (int)filp->private_data)
 		ret = -EACCES;

@@ -76,6 +76,9 @@ static int h4_open(struct hci_uart *hu)
 	skb_queue_head_init(&h4->txq);
 
 	hu->priv = h4;
+
+//	hu->tty->low_latency = 1;
+
 	return 0;
 }
 

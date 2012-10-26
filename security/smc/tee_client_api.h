@@ -18,7 +18,7 @@
  */
 
 /*
- * This header file corresponds to V1.0 of the GlobalPlatform
+ * This header file corresponds to V1.0 of the GlobalPlatform 
  * TEE Client API Specification
  */
 #ifndef   __TEE_CLIENT_API_H__
@@ -40,7 +40,7 @@
      - TEEC_Operation_IMP
 
    The implementation-dependent constants are:
-     - TEEC_CONFIG_SHAREDMEM_MAX_SIZE
+     - TEEC_CONFIG_SHAREDMEM_MAX_SIZE  
    The implementation-dependent macros are:
      - TEEC_PARAM_TYPES
 */

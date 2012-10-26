@@ -70,6 +70,10 @@
 #include "abe_mem.h"
 #include "abe_taskid.h"
 
+#ifdef ENABLE_TRAPZ
+#include <linux/trapz.h>
+#endif
+
 #define OMAP_ABE_IRQ_FIFO_MASK ((OMAP_ABE_D_MCUIRQFIFO_SIZE >> 2) - 1)
 
 void abe_init_asrc_vx_dl(s32 dppm);
@@ -132,8 +136,11 @@ EXPORT_SYMBOL(omap_abe_reset_hal);
 int omap_abe_wakeup(struct omap_abe *abe)
 {
 	/* Restart event generator */
+#ifdef CONFIG_ABE_44100
+	omap_abe_write_event_generator(abe, EVENT_44100);
+#else
 	omap_abe_write_event_generator(abe, EVENT_TIMER);
-
+#endif
 	/* reconfigure DMA Req and MCU Irq visibility */
 	omap_abe_hw_configuration(abe);
 	return 0;
@@ -255,6 +262,21 @@ int omap_abe_set_ping_pong_buffer(struct omap_abe *abe, u32 port, u32 n_bytes)
 		base_and_size = desc_pp.nextbuff1_BaseAddr;
 	}
 
+#ifdef ENABLE_TRAPZ
+        {
+	    unsigned int sum = 0;
+#ifdef AUDIO_LATENCY_CAL_CHECKSUM
+	    unsigned int i = 0;
+	    u32 *p = (u32 *)(abe->io_base[0] + base_and_size);
+	    for( i = 0; i < n_samples; i++ )
+	    {
+	       sum += *p++;
+	    }
+#endif
+	    TRAPZ_DESCRIBE(TRAPZ_KERN_ABE, abe_set_ping_pong_buffer, "ABE");
+	    TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_ABE, abe_set_ping_pong_buffer, n_samples, sum);
+	}
+#endif
 	base_and_size = abe->pp_buf_addr[abe->pp_buf_id_next];
 	abe->pp_buf_id_next = (abe->pp_buf_id_next + 1) & 0x03;
 

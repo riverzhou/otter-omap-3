@@ -34,6 +34,7 @@
 #include <sound/soc.h>
 #include <sound/initval.h>
 #include <sound/tlv.h>
+#include <sound/omap-hdmi-codec.h>
 
 #include <plat/omap_hwmod.h>
 #include <video/omapdss.h>
@@ -55,7 +56,6 @@ struct hdmi_params {
 	int channels_nr;
 };
 
-
 /* codec private data */
 struct hdmi_codec_data {
 	struct hdmi_audio_format audio_fmt;
@@ -67,9 +67,113 @@ struct hdmi_codec_data {
 	struct omap_dss_device *dssdev;
 	struct notifier_block notifier;
 	struct hdmi_params params;
+	struct delayed_work delayed_work;
+	struct workqueue_struct *workqueue;
+	struct hdmi_audio_edid audio_db;
+	struct snd_pcm_hw_constraint_list channel_constraint;
 	int active;
 } hdmi_data;
 
+static unsigned int stereo[] = {
+	2,
+};
+
+static unsigned int stereo_6[] = {
+	2,
+	6,
+};
+
+static unsigned int stereo_6_8[] = {
+	2,
+	6,
+	8,
+};
+
+int hdmi_audio_get_max_channels(void)
+{
+	int i, num_channels;
+	struct hdmi_audio_edid *audio_db = &hdmi_data.audio_db;
+
+	for (i = 0, num_channels = 0; i < audio_db->length; i++) {
+		if (audio_db->sad[i].format != HDMI_EDID_AUDIO_LPCM)
+			continue;
+		if (audio_db->sad[i].num_of_ch > num_channels)
+			num_channels = audio_db->sad[i].num_of_ch;
+	}
+	pr_debug("Maximum audio channels available %d\n", num_channels);
+	return num_channels;
+}
+
+static int hdmi_audio_check_hw_cap(struct hdmi_codec_data *data)
+{
+	int i;
+
+	/* check audio support on sink device */
+	for (i = 0; i < data->audio_db.length; i++) {
+
+		/* is format supported */
+		if (!(data->params.format & data->audio_db.sad[i].bit_depth)) {
+			pr_warning("WARNING: TV supports Compressed format"
+			" hence Un-Compressed formats (LPCM) is also supported\n");
+		}
+
+		/* is number of channels supported */
+		if (!(data->params.channels_nr <=
+				data->audio_db.sad[i].num_of_ch))
+			continue;
+
+		/* is freq supported */
+		switch (data->params.sample_freq) {
+		case 32000:
+			if (data->audio_db.sad[i].rates & SNDRV_PCM_RATE_32000)
+				return 0;
+			break;
+
+		case 44100:
+			if (data->audio_db.sad[i].rates & SNDRV_PCM_RATE_44100)
+				return 0;
+			break;
+
+		case 48000:
+			if (data->audio_db.sad[i].rates & SNDRV_PCM_RATE_48000)
+				return 0;
+			break;
+
+		default:
+			continue;
+		}
+	}
+	return -EINVAL;
+}
+
+static void hdmi_audio_set_channel_constraint(struct hdmi_codec_data *data)
+{
+	struct snd_pcm_hw_constraint_list *channel_constraint =
+					&data->channel_constraint;
+	int channel_count = hdmi_audio_get_max_channels();
+
+	switch (channel_count) {
+	case 8:
+		channel_constraint->count = ARRAY_SIZE(stereo_6_8);
+		channel_constraint->list = stereo_6_8;
+		break;
+	case 6:
+		channel_constraint->count = ARRAY_SIZE(stereo_6);
+		channel_constraint->list = stereo_6;
+		break;
+	case 2:
+	default:
+		channel_constraint->count = ARRAY_SIZE(stereo);
+		channel_constraint->list = stereo;
+		break;
+	}
+}
+
+void hdmi_audio_update_edid_info()
+{
+	omapdss_hdmi_get_audio_descriptors(&hdmi_data.audio_db);
+	hdmi_audio_set_channel_constraint(&hdmi_data);
+}
 
 static int hdmi_audio_set_configuration(struct hdmi_codec_data *priv)
 {
@@ -80,6 +184,15 @@ static int hdmi_audio_set_configuration(struct hdmi_codec_data *priv)
 	int err, n, cts, channel_alloc;
 	enum hdmi_core_audio_sample_freq sample_freq;
 	u32 pclk = omapdss_hdmi_get_pixel_clock();
+
+	/* Tricky when HDMI monitor does not support Audio*/
+	err = hdmi_audio_check_hw_cap(priv);
+	if (err) {
+		pr_debug("Format:%d, sample freq:%d, number of channels:%d"
+			" not supported by sink device\n", priv->params.format,
+			priv->params.sample_freq, priv->params.channels_nr);
+		//return err;
+	}
 
 	switch (priv->params.format) {
 	case SNDRV_PCM_FORMAT_S16_LE:
@@ -185,6 +298,7 @@ static int hdmi_audio_set_configuration(struct hdmi_codec_data *priv)
 	core_cfg->en_parallel_aud_input = true;
 
 	/* Number of channels */
+	aud_if_cfg->db1_channel_count = priv->params.channels_nr;
 
 	switch (priv->params.channels_nr) {
 	case 2:
@@ -197,13 +311,21 @@ static int hdmi_audio_set_configuration(struct hdmi_codec_data *priv)
 		break;
 	case 6:
 		core_cfg->layout = HDMI_AUDIO_LAYOUT_8CH;
-		channel_alloc = 0xB;
+		channel_alloc = 0x13;
 		audio_format->stereo_channels = HDMI_AUDIO_STEREO_FOURCHANNELS;
 		audio_format->active_chnnls_msk = 0x3f;
 		/* Enable all of the four available serial data channels */
 		core_cfg->i2s_cfg.active_sds = HDMI_AUDIO_I2S_SD0_EN |
 				HDMI_AUDIO_I2S_SD1_EN | HDMI_AUDIO_I2S_SD2_EN |
 				HDMI_AUDIO_I2S_SD3_EN;
+		/*
+		 * Overwrite info frame with channel count = 8 (7.1) and
+		 * CA = 0x13 in order to ensure that sample_present bits
+		 * configuration matches the number of channels (2 channels
+		 * are padded with zeroes) that are sent to fullfil
+		 * multichannel certification tests.
+		 */
+		aud_if_cfg->db1_channel_count = 8;
 		break;
 	case 8:
 		core_cfg->layout = HDMI_AUDIO_LAYOUT_8CH;
@@ -228,7 +350,6 @@ static int hdmi_audio_set_configuration(struct hdmi_codec_data *priv)
 	 * info frame audio see doc CEA861-D page 74
 	 */
 	aud_if_cfg->db1_coding_type = HDMI_INFOFRAME_AUDIO_DB1CT_FROM_STREAM;
-	aud_if_cfg->db1_channel_count = priv->params.channels_nr;
 	aud_if_cfg->db2_sample_freq = HDMI_INFOFRAME_AUDIO_DB2SF_FROM_STREAM;
 	aud_if_cfg->db2_sample_size = HDMI_INFOFRAME_AUDIO_DB2SS_FROM_STREAM;
 	aud_if_cfg->db4_channel_alloc = channel_alloc;
@@ -247,17 +368,25 @@ int hdmi_audio_notifier_callback(struct notifier_block *nb,
 
 	if (state == OMAP_DSS_DISPLAY_ACTIVE) {
 		/* this happens just after hdmi_power_on */
-		if (hdmi_data.active)
-			hdmi_ti_4xxx_audio_enable(&hdmi_data.ip_data, 0);
+		hdmi_audio_update_edid_info();
 		hdmi_audio_set_configuration(&hdmi_data);
 		if (hdmi_data.active) {
 			omap_hwmod_set_slave_idlemode(hdmi_data.oh,
 							HWMOD_IDLEMODE_NO);
-			hdmi_ti_4xxx_audio_enable(&hdmi_data.ip_data, 1);
-
+			hdmi_ti_4xxx_wp_audio_enable(&hdmi_data.ip_data, 1);
+			queue_delayed_work(hdmi_data.workqueue,
+				&hdmi_data.delayed_work,
+				msecs_to_jiffies(1));
 		}
+	} else {
+		cancel_delayed_work(&hdmi_data.delayed_work);
 	}
 	return 0;
+}
+
+static void hdmi_audio_work(struct work_struct *work)
+{
+	hdmi_ti_4xxx_audio_transfer_en(&hdmi_data.ip_data, 1);
 }
 
 int hdmi_audio_match(struct omap_dss_device *dssdev, void *arg)
@@ -297,14 +426,22 @@ static int hdmi_audio_trigger(struct snd_pcm_substream *substream, int cmd,
 		 */
 		omap_hwmod_set_slave_idlemode(priv->oh,
 			HWMOD_IDLEMODE_NO);
-		hdmi_ti_4xxx_audio_enable(&priv->ip_data, 1);
+		hdmi_ti_4xxx_wp_audio_enable(&priv->ip_data, 1);
+		queue_delayed_work(priv->workqueue, &priv->delayed_work,
+				msecs_to_jiffies(1));
+
 		priv->active = 1;
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
+		/* using __cancel_delayed_work() instead of cancel_delayed_work()
+		 * because this trigger is usually run in interrupt context.
+		 */
+		__cancel_delayed_work(&hdmi_data.delayed_work);
 		priv->active = 0;
-		hdmi_ti_4xxx_audio_enable(&priv->ip_data, 0);
+		hdmi_ti_4xxx_audio_transfer_en(&priv->ip_data, 0);
+		hdmi_ti_4xxx_wp_audio_enable(&priv->ip_data, 0);
 		/*
 		 * switch back to smart-idle & wakeup capable
 		 * after audio activity stops
@@ -321,10 +458,19 @@ static int hdmi_audio_trigger(struct snd_pcm_substream *substream, int cmd,
 static int hdmi_audio_startup(struct snd_pcm_substream *substream,
 				  struct snd_soc_dai *dai)
 {
+	struct snd_soc_pcm_runtime *rtd = substream->private_data;
+	struct snd_soc_codec *codec = rtd->codec;
+	struct hdmi_codec_data *priv = snd_soc_codec_get_drvdata(codec);
+
 	if (!omapdss_hdmi_get_mode()) {
 		pr_err("Current video settings do not support audio.\n");
 		return -EIO;
 	}
+
+	snd_pcm_hw_constraint_list(substream->runtime, 0,
+				SNDRV_PCM_HW_PARAM_CHANNELS,
+				&priv->channel_constraint);
+
 	return 0;
 }
 static int hdmi_probe(struct snd_soc_codec *codec)
@@ -378,6 +524,10 @@ static int hdmi_probe(struct snd_soc_codec *codec)
 	hdmi_data.notifier.notifier_call = hdmi_audio_notifier_callback;
 	blocking_notifier_chain_register(&hdmi_data.dssdev->state_notifiers,
 			&hdmi_data.notifier);
+
+	hdmi_data.workqueue = create_singlethread_workqueue("hdmi-codec");
+
+	INIT_DELAYED_WORK(&hdmi_data.delayed_work, hdmi_audio_work);
 
 	return 0;
 
