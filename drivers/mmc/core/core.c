@@ -29,7 +29,6 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/mmc.h>
 #include <linux/mmc/sd.h>
-#include <asm/mach-types.h>
 
 #include "core.h"
 #include "bus.h"
@@ -81,7 +80,7 @@ static int mmc_schedule_delayed_work(struct delayed_work *work,
 /*
  * Internal function. Flush all scheduled work from the MMC work queue.
  */
-static void mmc_flush_scheduled_work(void)
+void mmc_flush_scheduled_work(void)
 {
 	flush_workqueue(workqueue);
 }
@@ -309,7 +308,7 @@ void mmc_set_data_timeout(struct mmc_data *data, const struct mmc_card *card)
 			 * The limit is really 250 ms, but that is
 			 * insufficient for some crappy cards.
 			 */
-			limit_us = 500000;
+			limit_us = 300000;
 		else
 			limit_us = 100000;
 
@@ -789,9 +788,8 @@ EXPORT_SYMBOL(mmc_regulator_get_ocrmask);
 
 /**
  * mmc_regulator_set_ocr - set regulator to match host->ios voltage
- * @mmc: the host to regulate
- * @supply: regulator to use
  * @vdd_bit: zero for power off, else a bit number (host->ios.vdd)
+ * @supply: regulator to use
  *
  * Returns zero on success, else negative errno.
  *
@@ -799,12 +797,15 @@ EXPORT_SYMBOL(mmc_regulator_get_ocrmask);
  * a particular supply voltage.  This would normally be called from the
  * set_ios() method.
  */
-int mmc_regulator_set_ocr(struct mmc_host *mmc,
-			struct regulator *supply,
-			unsigned short vdd_bit)
+int mmc_regulator_set_ocr(struct regulator *supply, unsigned short vdd_bit)
 {
 	int			result = 0;
 	int			min_uV, max_uV;
+	int			enabled;
+
+	enabled = regulator_is_enabled(supply);
+	if (enabled < 0)
+		return enabled;
 
 	if (vdd_bit) {
 		int		tmp;
@@ -835,25 +836,17 @@ int mmc_regulator_set_ocr(struct mmc_host *mmc,
 		else
 			result = 0;
 
-		if (result == 0 && !mmc->regulator_enabled) {
+		if (result == 0 && !enabled)
 			result = regulator_enable(supply);
-			if (!result)
-				mmc->regulator_enabled = true;
-		}
-	} else if (mmc->regulator_enabled) {
+	} else if (enabled) {
 		result = regulator_disable(supply);
-		if (result == 0)
-			mmc->regulator_enabled = false;
 	}
 
-	if (result)
-		dev_err(mmc_dev(mmc),
-			"could not set regulator OCR (%d)\n", result);
 	return result;
 }
 EXPORT_SYMBOL(mmc_regulator_set_ocr);
 
-#endif /* CONFIG_REGULATOR */
+#endif
 
 /*
  * Mask off any voltages we don't support and select
@@ -1140,8 +1133,12 @@ void mmc_rescan(struct work_struct *work)
 	 * if there is a _removable_ card registered, check whether it is
 	 * still present
 	 */
-	if (host->bus_ops && host->bus_ops->detect && !host->bus_dead
-	    && !(host->caps & MMC_CAP_NONREMOVABLE))
+#ifdef CONFIG_TIWLAN_SDIO
+	if ((host->bus_ops != NULL) && host->bus_ops->detect && !host->bus_dead)
+#else
+	if ((host->bus_ops != NULL) && host->bus_ops->detect && !host->bus_dead
+					&& mmc_card_is_removable(host))
+#endif
 		host->bus_ops->detect(host);
 
 	/* If the card was removed the bus will be marked
@@ -1374,7 +1371,7 @@ int mmc_suspend_host(struct mmc_host *host)
 	}
 	mmc_bus_put(host);
 
-	if (!err && !mmc_card_keep_power(host))
+	if (!err && !(host->pm_flags & MMC_PM_KEEP_POWER))
 		mmc_power_off(host);
 
 	return err;
@@ -1398,7 +1395,7 @@ int mmc_resume_host(struct mmc_host *host)
 	}
 
 	if (host->bus_ops && !host->bus_dead) {
-		if (!mmc_card_keep_power(host)) {
+		if (!(host->pm_flags & MMC_PM_KEEP_POWER)) {
 			mmc_power_up(host);
 			mmc_select_voltage(host, host->ocr);
 			/*
@@ -1423,10 +1420,6 @@ int mmc_resume_host(struct mmc_host *host)
 			err = 0;
 		}
 	}
-
-	/* clear flag */
-	host->pm_flags &= ~MMC_PM_KEEP_POWER;
-
 	mmc_bus_put(host);
 
 	return err;

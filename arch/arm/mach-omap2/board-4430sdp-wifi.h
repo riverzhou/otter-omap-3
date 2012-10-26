@@ -13,7 +13,6 @@
 
 #define SDP4430_WIFI_PMENA_GPIO  54
 #define SDP4430_WIFI_IRQ_GPIO    53
-#define PANDA_WIFI_PMENA_GPIO    43
 
 void config_wlan_mux(void);
 

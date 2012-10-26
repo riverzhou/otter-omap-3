@@ -51,7 +51,7 @@ struct omap_devh_runtime_info {
 	pid_t mgr_pid;
 };
 
-enum devh_brdst {
+enum {
 	DEVH_BRDST_RUNNING,
 	DEVH_BRDST_STOPPED,
 	DEVH_BRDST_ERROR,
@@ -65,22 +65,6 @@ struct deh_event_ntfy {
 };
 
 struct omap_devh *devh_get_obj(int dev_index);
-
-static int deh_set_brd_state(struct omap_devh *devh, enum devh_brdst brdst)
-{
-	int retval = 0;
-	struct omap_devh_platform_data *pdata;
-	struct omap_devh_runtime_info *pinfo;
-
-	if (WARN_ON(devh == NULL)) {
-		pr_err("deh_set_brd_state: NULL devh\n");
-		return -EINVAL;
-	}
-	pdata = (struct omap_devh_platform_data *) devh->dev->platform_data;
-	pinfo = pdata->private_data;
-	pinfo->brd_state = brdst;
-	return retval;
-}
 
 static struct omap_devh_platform_data *devh_get_plat_data_by_name(char *name)
 {
@@ -100,10 +84,6 @@ static int devh_notify_event(struct omap_devh *devh , u32 event)
 {
 	struct deh_event_ntfy *fd_reg;
 
-	if (WARN_ON(devh == NULL)) {
-		pr_err("devh_notify_event: NULL devh\n");
-		return -EINVAL;
-	}
 	spin_lock_irq(&(devh->event_lock));
 	list_for_each_entry(fd_reg, &(devh->event_list), list)
 		if (fd_reg->event == event)
@@ -116,10 +96,6 @@ static int devh_notify_event(struct omap_devh *devh , u32 event)
 static void devh_notification_handler(u16 proc_id, u16 line_id, u32 event_id,
 					uint *arg, u32 payload)
 {
-	struct omap_devh *devh = (struct omap_devh *)arg;
-
-	deh_set_brd_state(devh, DEVH_BRDST_ERROR);
-
 	pr_warning("Sys Error occured in Ducati for proc_id = %d\n",
 		proc_id);
 
@@ -127,8 +103,7 @@ static void devh_notification_handler(u16 proc_id, u16 line_id, u32 event_id,
 	/* schedule the recovery */
 	ipc_recover_schedule();
 #endif /* ifdef CONFIG_SYSLINK_RECOVERY */
-
-	devh_notify_event(devh, DEV_SYS_ERROR);
+	devh_notify_event((struct omap_devh *)arg, DEV_SYS_ERROR);
 }
 
 static int devh44xx_notifier_call(struct notifier_block *nb,
@@ -260,32 +235,21 @@ static struct notifier_block devh_notify_nb_iommu_ducati1 = {
 static int devh44xx_wdt_ipc_notifier_call(struct notifier_block *nb,
 						unsigned long val, void *v)
 {
-	int retval = 0;
-	int status;
-	struct omap_devh *obj_sysm3, *obj_appm3;
+	struct omap_devh *obj;
+	int i = devh_get_plat_data_size();
 
 	pr_warning("Ducati Watch Dog fired\n");
-
-	/*Set board sate for SysM3 Devh device*/
-	obj_sysm3 = devh_get_obj(1);
-	retval = deh_set_brd_state(obj_sysm3, DEVH_BRDST_ERROR);
-
-	/*Set board sate for AppM3 Devh device*/
-	obj_appm3 = devh_get_obj(2);
-	status = deh_set_brd_state(obj_appm3, DEVH_BRDST_ERROR);
-	if (status < 0)
-		retval = status;
 
 #ifdef CONFIG_SYSLINK_RECOVERY
 	/* schedule the recovery */
 	ipc_recover_schedule();
 #endif /* ifdef CONFIG_SYSLINK_RECOVERY */
+	while (i--) {
+		obj = devh_get_obj(i);
+		devh_notify_event(obj, DEV_WATCHDOG_ERROR);
+	}
 
-	/*Send userspace notifications for both SysM3 and AppM3*/
-	devh_notify_event(obj_sysm3, DEV_WATCHDOG_ERROR);
-	devh_notify_event(obj_appm3, DEV_WATCHDOG_ERROR);
-
-	return retval;
+	return 0;
 }
 
 static struct notifier_block devh_notify_nb_ipc_wdt = {

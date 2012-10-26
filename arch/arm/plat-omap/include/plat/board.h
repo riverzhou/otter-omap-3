@@ -13,7 +13,6 @@
 #include <linux/types.h>
 
 #include <plat/gpio-switch.h>
-#include <plat/omap_apps_brd_id.h>
 
 /*
  * OMAP35x EVM revision
@@ -38,11 +37,6 @@ enum {
 #define OMAP_TAG_BOOT_REASON    0x4f80
 #define OMAP_TAG_FLASH_PART	0x4f81
 #define OMAP_TAG_VERSION_STR	0x4f82
-
-#if defined(CONFIG_MACH_OMAP_4430SDP)
-#define OMAP4_BLAZE_BOARD		0   /* 0x0010 */
-#define OMAP4_BLAZETABLET_BOARD 	1   /* 2143d */
-#endif
 
 struct omap_clock_config {
 	/* 0 for 12 MHz, 1 for 13 MHz and 2 for 19.2 MHz */
@@ -116,6 +110,8 @@ struct omap_pwm_led_platform_data {
 	const char *name;
 	int intensity_timer;
 	int blink_timer;
+    int def_on;
+    int def_brightness;
 	void (*set_power)(struct omap_pwm_led_platform_data *self, int on_off);
 };
 
@@ -164,6 +160,10 @@ extern int omap_board_config_size;
 
 /* for TI reference platforms sharing the same debug card */
 extern int debug_card_init(u32 addr, unsigned gpio);
+
+u8 quanta_get_mbid(void);
+u8 quanta_get_touchid(void);
+u8 quanta_get_panelid(void);
 
 /* OMAP3EVM revision */
 #if defined(CONFIG_MACH_OMAP3EVM)

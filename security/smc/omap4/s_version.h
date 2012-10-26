@@ -44,8 +44,8 @@
 * If this is a patch or engineering version use the following
 * defines to set the version number. Else set these values to 0.
 */
-#define S_VERSION_PATCH 9
 #define S_VERSION_ENG 0
+#define S_VERSION_PATCH 2
 
 #ifdef S_VERSION_BUILD
 /* TRICK: detect if S_VERSION is defined but empty */
@@ -84,8 +84,8 @@
 	S_VERSION_OS \
 	S_VERSION_PLATFORM \
 	S_VERSION_MAIN \
-	_S_VERSION_PATCH \
 	_S_VERSION_ENG \
+	_S_VERSION_PATCH \
 	"."  __STRINGIFY2(S_VERSION_BUILD) " " \
 	S_VERSION_VARIANT
 

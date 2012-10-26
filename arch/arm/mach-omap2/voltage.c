@@ -54,7 +54,6 @@
 /* Bitfield OPP_SEL.PRM_LDO_ABB_CTRL */
 #define FAST_OPP		0x1
 #define NOMINAL_OPP		0x0
-#define SLOW_OPP		0x3
 
 #ifdef CONFIG_PM_DEBUG
 #include <linux/seq_file.h>
@@ -362,7 +361,7 @@ static struct omap_volt_vc_data vc_config = {
 
 /* VDD1 */
 static struct omap_volt_data omap34xx_vdd1_volt_data[] = {
-	{.volt_nominal =  975000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
+	{.volt_nominal = 975000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
 	{.volt_nominal = 1075000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
 	{.volt_nominal = 1200000, .sr_errminlimit = 0xF9, .vp_errgain = 0x18},
 	{.volt_nominal = 1270000, .sr_errminlimit = 0xF9, .vp_errgain = 0x18},
@@ -370,7 +369,7 @@ static struct omap_volt_data omap34xx_vdd1_volt_data[] = {
 };
 
 static struct omap_volt_data omap36xx_vdd1_volt_data[] = {
-	{.volt_nominal =  930000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
+	{.volt_nominal = 930000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
 	{.volt_nominal = 1100000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16, .abb_type = NOMINAL_OPP},
 	{.volt_nominal = 1260000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = NOMINAL_OPP},
 	{.volt_nominal = 1350000, .sr_errminlimit = 0xFA, .vp_errgain = 0x27, .abb_type = FAST_OPP},
@@ -378,13 +377,13 @@ static struct omap_volt_data omap36xx_vdd1_volt_data[] = {
 
 /* VDD2 */
 static struct omap_volt_data omap34xx_vdd2_volt_data[] = {
-	{.volt_nominal =  975000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
+	{.volt_nominal = 975000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
 	{.volt_nominal = 1050000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
 	{.volt_nominal = 1150000, .sr_errminlimit = 0xF9, .vp_errgain = 0x18},
 };
 
 static struct omap_volt_data omap36xx_vdd2_volt_data[] = {
-	{.volt_nominal =  930000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
+	{.volt_nominal = 930000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
 	{.volt_nominal = 1137500, .sr_errminlimit = 0xF9, .vp_errgain = 0x16},
 };
 
@@ -394,70 +393,34 @@ static struct omap_volt_data omap36xx_vdd2_volt_data[] = {
  * values are left as 0 as they have to be populated by smartreflex
  * driver after reading the efuse.
  */
-static struct omap_volt_data omap443x_vdd_mpu_volt_data[] = {
+static struct omap_volt_data omap44xx_vdd_mpu_volt_data[] = {
 	{.volt_nominal = 1005000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
 	{.volt_nominal = 1025000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
 	{.volt_nominal = 1200000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16, .abb_type = NOMINAL_OPP},
-	{.volt_nominal = 1325000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = NOMINAL_OPP},
-	{.volt_nominal = 1387000, .sr_errminlimit = 0xFA, .vp_errgain = 0x27, .abb_type = FAST_OPP},
-	{.volt_nominal = 1388000, .sr_errminlimit = 0xFA, .vp_errgain = 0x27, .abb_type = FAST_OPP},
+	{.volt_nominal = 1313000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = NOMINAL_OPP},
+	{.volt_nominal = 1375000, .sr_errminlimit = 0xFA, .vp_errgain = 0x27, .abb_type = FAST_OPP},
 };
 
-static struct omap_volt_data omap443x_vdd_iva_volt_data[] = {
-	{.volt_nominal =  948000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
-	{.volt_nominal =  950000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
-	{.volt_nominal = 1114000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16, .abb_type = NOMINAL_OPP},
+static struct omap_volt_data omap44xx_vdd_iva_volt_data[] = {
+	{.volt_nominal = 1011000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
+	{.volt_nominal = 1013000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
+	{.volt_nominal = 1188000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16, .abb_type = NOMINAL_OPP},
 #ifdef CONFIG_OMAP_ABB_DEFAULT_IVA_FBB
-	{.volt_nominal = 1291000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = FAST_OPP},
+	{.volt_nominal = 1300000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = FAST_OPP},
 #else
-	{.volt_nominal = 1291000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = NOMINAL_OPP},
+	{.volt_nominal = 1300000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = NOMINAL_OPP},
 #endif
 };
 
-static struct omap_volt_data omap443x_vdd_core_volt_data[] = {
-	{.volt_nominal =  942000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
-	{.volt_nominal =  962000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
-	{.volt_nominal = 1127000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16},
+static struct omap_volt_data omap44xx_vdd_core_volt_data[] = {
+	{.volt_nominal = 1005000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
+	{.volt_nominal = 1025000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
+	{.volt_nominal = 1200000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16},
 };
-
-static struct omap_volt_data omap446x_vdd_mpu_volt_data[] = {
-	{.volt_nominal = 1005000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
-	{.volt_nominal = 1025000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
-	{.volt_nominal = 1203000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
-	{.volt_nominal = 1317000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16, .abb_type = NOMINAL_OPP,
-		.abb_trim = {.fbb_trim_mask = OMAP4_STD_FUSE_OPP_DPLL_1_MPU_FBB_TB_MASK,
-			.rbb_trim_mask = OMAP4_STD_FUSE_OPP_DPLL_1_MPU_RBB_TB_MASK} },
-	{.volt_nominal = 1379000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = NOMINAL_OPP,
-		.abb_trim = {.fbb_trim_mask = OMAP4_STD_FUSE_OPP_DPLL_1_MPU_FBB_TB_MASK} },
-	{.volt_nominal = 1380000, .sr_errminlimit = 0xFA, .vp_errgain = 0x27, .abb_type = FAST_OPP},
-};
-
-static struct omap_volt_data omap446x_vdd_iva_volt_data[] = {
-	{.volt_nominal =  948000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
-	{.volt_nominal =  950000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C, .abb_type = NOMINAL_OPP},
-	{.volt_nominal = 1114000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16, .abb_type = NOMINAL_OPP},
-#ifdef CONFIG_OMAP_ABB_DEFAULT_IVA_FBB
-	{.volt_nominal = 1291000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = FAST_OPP},
-#else
-	{.volt_nominal = 1291000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23, .abb_type = NOMINAL_OPP,
-		.abb_trim = {.rbb_trim_mask = OMAP4_STD_FUSE_OPP_DPLL_1_IVA_RBB_TB_MASK} },
-#endif
-};
-
-static struct omap_volt_data omap446x_vdd_core_volt_data[] = {
-	{.volt_nominal =  942000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
-	{.volt_nominal =  962000, .sr_errminlimit = 0xF4, .vp_errgain = 0x0C},
-	{.volt_nominal = 1027000, .sr_errminlimit = 0xF9, .vp_errgain = 0x16},
-	{.volt_nominal = 1250000, .sr_errminlimit = 0xFA, .vp_errgain = 0x23},
-};
-
-
-
-
 
 /* OMAP 3430 MPU Core VDD dependency table */
 static struct omap_vdd_dep_volt omap34xx_vdd1_vdd2_data[] = {
-	{.main_vdd_volt =  975000, .dep_vdd_volt = 1050000},
+	{.main_vdd_volt = 975000, .dep_vdd_volt = 1050000},
 	{.main_vdd_volt = 1075000, .dep_vdd_volt = 1050000},
 	{.main_vdd_volt = 1200000, .dep_vdd_volt = 1150000},
 	{.main_vdd_volt = 1270000, .dep_vdd_volt = 1150000},
@@ -474,42 +437,21 @@ static struct omap_vdd_dep_info omap34xx_vdd1_dep_info[] = {
 
 /* OMAP 4430 MPU Core VDD dependency table */
 static struct omap_vdd_dep_volt omap44xx_vddmpu_vddcore_data[] = {
-	{.main_vdd_volt = 1005000, .dep_vdd_volt =  942000},
-	{.main_vdd_volt = 1025000, .dep_vdd_volt =  962000},
-	{.main_vdd_volt = 1200000, .dep_vdd_volt = 1127000},
-	{.main_vdd_volt = 1325000, .dep_vdd_volt = 1127000},
-	{.main_vdd_volt = 1387000, .dep_vdd_volt = 1127000},
-	{.main_vdd_volt = 1388000, .dep_vdd_volt = 1127000},
+	{.main_vdd_volt = 1005000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1025000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1200000, .dep_vdd_volt = 1200000},
+	{.main_vdd_volt = 1313000, .dep_vdd_volt = 1200000},
+	{.main_vdd_volt = 1375000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 0, .dep_vdd_volt = 0},
 };
 
 static struct omap_vdd_dep_volt omap44xx_vddiva_vddcore_data[] = {
-	{.main_vdd_volt =  948000, .dep_vdd_volt =  942000},
-	{.main_vdd_volt =  950000, .dep_vdd_volt =  962000},
-	{.main_vdd_volt = 1114000, .dep_vdd_volt = 1127000},
-	{.main_vdd_volt = 1291000, .dep_vdd_volt = 1127000},
+	{.main_vdd_volt = 1011000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1013000, .dep_vdd_volt = 1025000},
+	{.main_vdd_volt = 1188000, .dep_vdd_volt = 1200000},
+	{.main_vdd_volt = 1300000, .dep_vdd_volt = 1200000},
 	{.main_vdd_volt = 0, .dep_vdd_volt = 0},
 };
-
-/* OMAP 4460 MPU Core VDD dependency table */
-static struct omap_vdd_dep_volt omap446x_vddmpu_vddcore_data[] = {
-	{.main_vdd_volt = 1005000, .dep_vdd_volt =  942000},
-	{.main_vdd_volt = 1025000, .dep_vdd_volt =  962000},
-	{.main_vdd_volt = 1203000, .dep_vdd_volt = 1250000},
-	{.main_vdd_volt = 1317000, .dep_vdd_volt = 1250000},
-	{.main_vdd_volt = 1379000, .dep_vdd_volt = 1250000},
-	{.main_vdd_volt = 1380000, .dep_vdd_volt = 1250000},
-	{.main_vdd_volt = 0, .dep_vdd_volt = 0},
-};
-
-static struct omap_vdd_dep_volt omap446x_vddiva_vddcore_data[] = {
-	{.main_vdd_volt =  948000, .dep_vdd_volt =  942000},
-	{.main_vdd_volt =  950000, .dep_vdd_volt =  962000},
-	{.main_vdd_volt = 1114000, .dep_vdd_volt = 1250000},
-	{.main_vdd_volt = 1291000, .dep_vdd_volt = 1250000},
-	{.main_vdd_volt = 0, .dep_vdd_volt = 0},
-};
-
 
 static struct omap_vdd_dep_info omap44xx_vddmpu_dep_info[] = {
 	{
@@ -522,20 +464,6 @@ static struct omap_vdd_dep_info omap44xx_vddiva_dep_info[] = {
 	{
 		.name	= "core",
 		.dep_table = omap44xx_vddiva_vddcore_data,
-	},
-};
-
-static struct omap_vdd_dep_info omap446x_vddmpu_dep_info[] = {
-	{
-		.name	= "core",
-		.dep_table = omap446x_vddmpu_vddcore_data,
-	},
-};
-
-static struct omap_vdd_dep_info omap446x_vddiva_dep_info[] = {
-	{
-		.name	= "core",
-		.dep_table = omap446x_vddiva_vddcore_data,
 	},
 };
 
@@ -747,11 +675,10 @@ static void vp_latch_vsel(struct omap_vdd_info *vdd)
  * @val	 : VOLTAGE_PRECHANGE or VOLTAGE_POSTCHANGE
  * @data : struct omap_volt_change_info for a given voltage domain
  *
- * Sets ABB LDO to either bypass, Forward Body-Bias or Reverse Body-Bias
- * whenever a voltage change notification is generated.
- * Voltages marked as FAST/SLOW will result in FBB/RBB operation
- * of ABB LDO respectively. Voltages marked as NOMINAL will bypass the LDO.
- * Returns 0 upon success, negative error code otherwise.
+ * Sets ABB ldo to either bypass or Forward Body-Bias whenever a voltage
+ * change notification is generated.  Voltages marked as FAST will result in
+ * FBB operation of ABB ldo and voltages marked as NOMINAL will bypass the
+ * ldo.  Returns 0 upon success, negative error code otherwise.
  */
 static int omap_abb_notify_voltage(struct notifier_block *nb,
 		unsigned long val, void *data)
@@ -778,43 +705,31 @@ static int omap_abb_notify_voltage(struct notifier_block *nb,
 			v_info->vdd_info->omap_abb_reg_val.prm_abb_ldo_setup_idx);
 			ret = omap3_abb_change_opp(v_info->vdd_info);
 		} else { /* cpu_is_omap44xx() */
-			prm_clear_mod_reg_bits(OMAP4430_ACTIVE_FBB_SEL_MASK |
-					OMAP4430_ACTIVE_RBB_SEL_MASK,
-				OMAP4430_PRM_DEVICE_MOD,
-				vdd_info->omap_abb_reg_val.prm_abb_ldo_setup_idx);
 			prm_rmw_mod_reg_bits(OMAP4430_OPP_SEL_MASK,
-				(NOMINAL_OPP << OMAP4430_OPP_SEL_SHIFT),
-				OMAP4430_PRM_DEVICE_MOD,
-				v_info->vdd_info->omap_abb_reg_val.prm_abb_ldo_ctrl_idx);
+			(NOMINAL_OPP << OMAP4430_OPP_SEL_SHIFT),
+			OMAP4430_PRM_DEVICE_MOD,
+			v_info->vdd_info->omap_abb_reg_val.prm_abb_ldo_ctrl_idx);
 			ret = omap4_abb_change_opp(v_info->vdd_info);
 		}
-	} else if (val == VOLTAGE_POSTCHANGE) {
+	} else if (val == VOLTAGE_POSTCHANGE &&
+			target_volt_data->abb_type == FAST_OPP) {
 		/* enable Forward Body-Bias before raising voltage */
-		if (cpu_is_omap3630() &&
-				target_volt_data->abb_type == FAST_OPP) {
+		if (cpu_is_omap3630()) {
 			prm_rmw_mod_reg_bits(OMAP3630_OPP_SEL_MASK,
 			(FAST_OPP << OMAP3630_OPP_SEL_SHIFT),
 			OMAP3430_GR_MOD,
 			v_info->vdd_info->omap_abb_reg_val.prm_abb_ldo_setup_idx);
 			ret = omap3_abb_change_opp(v_info->vdd_info);
-		} else if (cpu_is_omap44xx() &&
-				(target_volt_data->abb_type == FAST_OPP ||
-				target_volt_data->abb_type == SLOW_OPP)) {
-			prm_rmw_mod_reg_bits(OMAP4430_ACTIVE_FBB_SEL_MASK |
-					OMAP4430_ACTIVE_RBB_SEL_MASK,
-				(target_volt_data->abb_type == FAST_OPP) ?
-					OMAP4430_ACTIVE_FBB_SEL_MASK :
-					OMAP4430_ACTIVE_RBB_SEL_MASK,
-				OMAP4430_PRM_DEVICE_MOD,
-				vdd_info->omap_abb_reg_val.prm_abb_ldo_setup_idx);
+		} else { /* cpu_is_omap44xx() */
 			prm_rmw_mod_reg_bits(OMAP4430_OPP_SEL_MASK,
-				(target_volt_data->abb_type << OMAP4430_OPP_SEL_SHIFT),
-				OMAP4430_PRM_DEVICE_MOD,
-				v_info->vdd_info->omap_abb_reg_val.prm_abb_ldo_ctrl_idx);
+			(FAST_OPP << OMAP4430_OPP_SEL_SHIFT),
+			OMAP4430_PRM_DEVICE_MOD,
+			v_info->vdd_info->omap_abb_reg_val.prm_abb_ldo_ctrl_idx);
 			ret = omap4_abb_change_opp(v_info->vdd_info);
 		}
 	} else
 		ret = -EINVAL;
+
 out:
 	return ret;
 }
@@ -831,17 +746,18 @@ static struct notifier_block abb_iva_volt_notifier_block = {
  * omap_abb_init - initialize Adaptive Body-Bias LDO
  * @vdd_info : pointer to the voltage domain we are initializing
  *
- * Currently only supports OMAP4. Disables sleep Reverse Body-Bias.
- * active Reverse Body-Bias and active Forward Body-Bias
- * for both voltage domains by default.
- * Registers voltage notifiers for affected voltage domains.
- * Returns 0 on success, negative integers otherwise.
+ * Currently only supports OMAP4.  Enables active Forward Body-Bias by default
+ * on VDD_MPU only, not on VDD_IVA.  Disables sleep Reverse Body-Bias and
+ * active Reverse Body-Bias for both voltage domains.  Registers voltage
+ * notifiers for affected voltage domains.  Returns 0 on success, negative
+ * integers otherwise.
  */
 static int omap_abb_init(struct omap_vdd_info *vdd_info)
 {
 	int ret = 0;
 	struct clk *sys_ck;
 	u32 sr2_wt_cnt_val;
+
 	if (!cpu_is_omap3630() && !cpu_is_omap44xx()) {
 		pr_info("%s: CPU does not support ABB feature.\n", __func__);
 		ret = -EINVAL;
@@ -885,28 +801,20 @@ static int omap_abb_init(struct omap_vdd_info *vdd_info)
 				OMAP4430_PRM_DEVICE_MOD,
 				vdd_info->omap_abb_reg_val.prm_abb_ldo_setup_idx);
 
-		/* disable ABB by default */
-		prm_clear_mod_reg_bits(OMAP4430_ACTIVE_FBB_SEL_MASK |
-					OMAP4430_ACTIVE_RBB_SEL_MASK |
-					OMAP4430_SLEEP_RBB_SEL_MASK,
+		/* enable fbb by default */
+		prm_set_mod_reg_bits(OMAP4430_ACTIVE_FBB_SEL_MASK,
 				OMAP4430_PRM_DEVICE_MOD,
 				vdd_info->omap_abb_reg_val.prm_abb_ldo_setup_idx);
 
-		if (cpu_is_omap446x()) {
-			int i;
-			u32 val = omap_ctrl_readl(
-					OMAP4_CTRL_MODULE_CORE_STD_FUSE_OPP_DPLL_1_OFFSET);
+		/* do not enable active rbb by default */
+		prm_clear_mod_reg_bits(OMAP4430_ACTIVE_RBB_SEL_MASK,
+				OMAP4430_PRM_DEVICE_MOD,
+				vdd_info->omap_abb_reg_val.prm_abb_ldo_setup_idx);
 
-			for (i = 0; i < vdd_info->volt_data_count; i++) {
-				struct omap_abb_trim_data *abb_trim_data;
-				abb_trim_data = &vdd_info->volt_data[i].abb_trim;
-
-				if (val & abb_trim_data->rbb_trim_mask) {
-					vdd_info->volt_data[i].abb_type = SLOW_OPP;
-				} else if (val & abb_trim_data->fbb_trim_mask)
-					vdd_info->volt_data[i].abb_type = FAST_OPP;
-			}
-		}
+		/* do not enable sleep rbb by default */
+		prm_clear_mod_reg_bits(OMAP4430_SLEEP_RBB_SEL_MASK,
+				OMAP4430_PRM_DEVICE_MOD,
+				vdd_info->omap_abb_reg_val.prm_abb_ldo_setup_idx);
 	}
 
 	if(!strcmp("mpu", vdd_info->voltdm.name)) {
@@ -919,6 +827,7 @@ static int omap_abb_init(struct omap_vdd_info *vdd_info)
 		pr_warning("%s: Invalid VDD specified\n", __func__);
 		ret = -EINVAL;
 	}
+
 out:
 	return ret;
 }
@@ -1170,20 +1079,20 @@ static void __init omap4_init_voltagecontroller(void)
 			(vdd_info[icore].pmic->i2c_cmdreg <<
 			 OMAP4430_VOLRA_VDD_CORE_L_SHIFT));
 	voltage_write_reg(OMAP4_PRM_VC_CFG_CHANNEL_OFFSET,
-			 OMAP4430_RAC_VDD_MPU_L_MASK |
-			 OMAP4430_RAV_VDD_MPU_L_MASK |
-			 OMAP4430_CMD_VDD_MPU_L_MASK |
-			 OMAP4430_RAV_VDD_IVA_L_MASK |
-			 OMAP4430_CMD_VDD_IVA_L_MASK |
-			 OMAP4430_RAC_VDD_IVA_L_MASK |
+			OMAP4430_RAV_VDD_MPU_L_MASK |
+			OMAP4430_CMD_VDD_MPU_L_MASK |
+			((vdd_info[impu].pmic->i2c_addr ==
+				vdd_info[icore].pmic->i2c_addr) ?
+					0 : OMAP4430_SA_VDD_MPU_L_MASK) |
+			OMAP4430_RAV_VDD_IVA_L_MASK |
+			OMAP4430_CMD_VDD_IVA_L_MASK |
 			((vdd_info[iiva].pmic->i2c_addr ==
-			  vdd_info[impu].pmic->i2c_addr) ?
+				vdd_info[icore].pmic->i2c_addr) ?
 					0 : OMAP4430_SA_VDD_IVA_L_MASK) |
-			 OMAP4430_RAV_VDD_CORE_L_MASK |
-			 OMAP4430_RAC_VDD_CORE_L_MASK |
-			 OMAP4430_CMD_VDD_CORE_L_MASK |
-			((vdd_info[icore].pmic->i2c_addr ==
-			  vdd_info[impu].pmic->i2c_addr) ?
+			OMAP4430_RAV_VDD_CORE_L_MASK |
+			OMAP4430_CMD_VDD_CORE_L_MASK |
+			((vdd_info[iiva].pmic->i2c_addr ==
+			vdd_info[icore].pmic->i2c_addr) ?
 					0 : OMAP4430_SA_VDD_CORE_L_MASK));
 	/*
 	 * Configure SR I2C in HS Mode. Is there really a need to configure
@@ -1207,37 +1116,42 @@ static void __init omap4_init_voltagecontroller(void)
 	 * used.
 	 */
 	voltage_write_reg(OMAP4_PRM_VOLTSETUP_CORE_RET_SLEEP_OFFSET,
-		(0x3 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
-		(0x3 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
+		(0x0 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
+		(0x0 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
 		(0xF << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
 		(0xF << OMAP4430_RAMP_UP_COUNT_SHIFT));
 	voltage_write_reg(OMAP4_PRM_VOLTSETUP_IVA_RET_SLEEP_OFFSET,
-		(0x3 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
-		(0x3 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
-		(0xF << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
-		(0xF << OMAP4430_RAMP_UP_COUNT_SHIFT));
+		(0x0 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
+		(0x0 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
+		(0x1D << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
+		(0x1D << OMAP4430_RAMP_UP_COUNT_SHIFT));
 	voltage_write_reg(OMAP4_PRM_VOLTSETUP_MPU_RET_SLEEP_OFFSET,
-		(0x3 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
-		(0x3 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
-		(0xF << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
-		(0xF << OMAP4430_RAMP_UP_COUNT_SHIFT));
+		(0x0 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
+		(0x0 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
+		(0x1D << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
+		(0x1D << OMAP4430_RAMP_UP_COUNT_SHIFT));
 
 	/* setup the VOLTSETUP* registers for OFF */
 	voltage_write_reg(OMAP4_PRM_VOLTSETUP_CORE_OFF_OFFSET,
-		(0x3 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
-		(0x3 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
-		(0xF << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
-		(0xF << OMAP4430_RAMP_UP_COUNT_SHIFT));
+		(0x2 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
+		(0x2 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
+		(0x8 << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
+		(0x26 << OMAP4430_RAMP_UP_COUNT_SHIFT));
 	voltage_write_reg(OMAP4_PRM_VOLTSETUP_IVA_OFF_OFFSET,
-		(0x3 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
-		(0x3 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
-		(0xF << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
-		(0xF << OMAP4430_RAMP_UP_COUNT_SHIFT));
+		(0x2 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
+		(0x2 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
+		(0x8 << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
+		(0x26 << OMAP4430_RAMP_UP_COUNT_SHIFT));
 	voltage_write_reg(OMAP4_PRM_VOLTSETUP_MPU_OFF_OFFSET,
-		(0x3 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
-		(0x3 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
-		(0xF << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
-		(0xF << OMAP4430_RAMP_UP_COUNT_SHIFT));
+		(0x2 << OMAP4430_RAMP_DOWN_PRESCAL_SHIFT) |
+		(0x2 << OMAP4430_RAMP_UP_PRESCAL_SHIFT) |
+		(0x8 << OMAP4430_RAMP_DOWN_COUNT_SHIFT) |
+		(0x26 << OMAP4430_RAMP_UP_COUNT_SHIFT));
+
+	/* setup the VOLTSETUP* registers for WARM RESET */
+	voltage_write_reg(OMAP4_PRM_VOLTSETUP_WARMRESET_OFFSET,
+		(0x1D << OMAP4430_STABLE_COUNT_SHIFT) |
+		(0x3 << OMAP4430_STABLE_PRESCAL_SHIFT));
 
 	on_cmd = vdd_info[impu].pmic->onforce_cmd(
 		vdd_info[impu].pmic->uv_to_vsel(vc_config.vdd0_on));
@@ -1280,6 +1194,7 @@ static void __init omap4_init_voltagecontroller(void)
 			(onlp_cmd << OMAP4430_ONLP_SHIFT) |
 			(ret_cmd << OMAP4430_RET_SHIFT) |
 			(off_cmd << OMAP4430_OFF_SHIFT));
+
 }
 
 /* Sets up all the VDD related info for OMAP4 */
@@ -1292,17 +1207,10 @@ static void __init omap4_vdd_data_configure(struct omap_vdd_info *vdd)
 	if (!strcmp(vdd->voltdm.name, "mpu")) {
 		vdd->vp_reg.vlimitto_vddmin = vdd->pmic->vp_vlimitto_vddmin;
 		vdd->vp_reg.vlimitto_vddmax = vdd->pmic->vp_vlimitto_vddmax;
-		if (cpu_is_omap446x()) {
-			vdd->volt_data = omap446x_vdd_mpu_volt_data;
-			vdd->volt_data_count = ARRAY_SIZE(omap446x_vdd_mpu_volt_data);
-			vdd->dep_vdd_info = omap446x_vddmpu_dep_info;
-			vdd->nr_dep_vdd = ARRAY_SIZE(omap446x_vddmpu_dep_info);
-		} else {
-			vdd->volt_data = omap443x_vdd_mpu_volt_data;
-			vdd->volt_data_count = ARRAY_SIZE(omap443x_vdd_mpu_volt_data);
-			vdd->dep_vdd_info = omap44xx_vddmpu_dep_info;
-			vdd->nr_dep_vdd = ARRAY_SIZE(omap44xx_vddmpu_dep_info);
-		}
+		vdd->volt_data = omap44xx_vdd_mpu_volt_data;
+		vdd->volt_data_count = ARRAY_SIZE(omap44xx_vdd_mpu_volt_data);
+		vdd->dep_vdd_info = omap44xx_vddmpu_dep_info;
+		vdd->nr_dep_vdd = ARRAY_SIZE(omap44xx_vddmpu_dep_info);
 		vdd->volt_clk = clk_get(NULL, "dpll_mpu_ck");
 		WARN(IS_ERR(vdd->volt_clk), "unable to get clock for vdd_%s\n",
 				vdd->voltdm.name);
@@ -1315,13 +1223,8 @@ static void __init omap4_vdd_data_configure(struct omap_vdd_info *vdd)
 	} else if (!strcmp(vdd->voltdm.name, "core")) {
 		vdd->vp_reg.vlimitto_vddmin = vdd->pmic->vp_vlimitto_vddmin;
 		vdd->vp_reg.vlimitto_vddmax = vdd->pmic->vp_vlimitto_vddmax;
-		if (cpu_is_omap446x()) {
-			vdd->volt_data = omap446x_vdd_core_volt_data;
-			vdd->volt_data_count = ARRAY_SIZE(omap446x_vdd_core_volt_data);
-		} else {
-			vdd->volt_data = omap443x_vdd_core_volt_data;
-			vdd->volt_data_count = ARRAY_SIZE(omap443x_vdd_core_volt_data);
-		}
+		vdd->volt_data = omap44xx_vdd_core_volt_data;
+		vdd->volt_data_count = ARRAY_SIZE(omap44xx_vdd_core_volt_data);
 		vdd->volt_clk = clk_get(NULL, "l3_div_ck");
 		WARN(IS_ERR(vdd->volt_clk), "unable to get clock for vdd_%s\n",
 				vdd->voltdm.name);
@@ -1334,17 +1237,10 @@ static void __init omap4_vdd_data_configure(struct omap_vdd_info *vdd)
 	} else if (!strcmp(vdd->voltdm.name, "iva")) {
 		vdd->vp_reg.vlimitto_vddmin = vdd->pmic->vp_vlimitto_vddmin;
 		vdd->vp_reg.vlimitto_vddmax = vdd->pmic->vp_vlimitto_vddmax;
-		if (cpu_is_omap446x()) {
-			vdd->volt_data = omap446x_vdd_iva_volt_data;
-			vdd->volt_data_count = ARRAY_SIZE(omap446x_vdd_iva_volt_data);
-			vdd->dep_vdd_info = omap446x_vddiva_dep_info;
-			vdd->nr_dep_vdd = ARRAY_SIZE(omap446x_vddiva_dep_info);
-		} else {
-			vdd->volt_data = omap443x_vdd_iva_volt_data;
-			vdd->volt_data_count = ARRAY_SIZE(omap443x_vdd_iva_volt_data);
-			vdd->dep_vdd_info = omap44xx_vddiva_dep_info;
-			vdd->nr_dep_vdd = ARRAY_SIZE(omap44xx_vddiva_dep_info);
-		}
+		vdd->volt_data = omap44xx_vdd_iva_volt_data;
+		vdd->volt_data_count = ARRAY_SIZE(omap44xx_vdd_iva_volt_data);
+		vdd->dep_vdd_info = omap44xx_vddiva_dep_info;
+		vdd->nr_dep_vdd = ARRAY_SIZE(omap44xx_vddiva_dep_info);
 		vdd->volt_clk = clk_get(NULL, "dpll_iva_m5x2_ck");
 		WARN(IS_ERR(vdd->volt_clk), "unable to get clock for vdd_%s\n",
 				vdd->voltdm.name);
@@ -1483,8 +1379,6 @@ static void omap_abb_enable(struct omap_vdd_info *vdd_info)
   * omap_abb_disable - Clears ABB_LDO_SETUP.SR2EN bit
   * Disables ABB.
   */
-static void omap_abb_disable(struct omap_vdd_info *vdd_info) __attribute__ ((unused));
-
 static void omap_abb_disable(struct omap_vdd_info *vdd_info)
 {
 	if (cpu_is_omap3630())
@@ -1829,6 +1723,7 @@ static int vp_forceupdate_scale_voltage(struct omap_vdd_info *vdd,
 			omap_get_operation_voltage(target_volt));
 	current_vsel = voltage_read_reg(vdd->vp_offs.voltage);
 	smps_steps = abs(target_vsel - current_vsel);
+
 	/* Setting the ON voltage to the new target voltage */
 	vc_cmdval = voltage_read_reg(vdd->cmdval_reg);
 	vc_cmdval &= ~vc_cmd_on_mask;
@@ -2158,16 +2053,8 @@ static int omap_voltage_add_userreq_internal(struct voltagedomain *voltdm,
 	struct plist_node *node;
 	int found = 0;
 
-	if (WARN_ON(voltdm == NULL || dev == NULL || volt == NULL))
-		return -EFAULT;
-
-	if (IS_ERR(voltdm)) {
-		pr_err("%s: VDD specified does not exist!\n", __func__);
-		return -EINVAL;
-	}
-
-	if (IS_ERR(dev)) {
-		pr_err("%s: device specified does not exist!\n", __func__);
+	if (!voltdm || IS_ERR(voltdm)) {
+		pr_warning("%s: VDD specified does not exist!\n", __func__);
 		return -EINVAL;
 	}
 
@@ -2783,19 +2670,19 @@ static int __init omap_voltage_init(void)
 	 * 2. trim VDAC value for TV output as per recomendation
 	 */
 	if (cpu_is_omap44xx()
-		&& (omap_rev() >= OMAP4430_REV_ES2_2)) {
+		&& (omap_rev() >= CHIP_IS_OMAP4430ES2_2)) {
 		is_trimmed = omap_ctrl_readl(
-			OMAP4_CTRL_MODULE_CORE_LDOSRAM_MPU_VOLTAGE_CTRL_OFFSET);
+			OMAP4_CTRL_MODULE_CORE_LDOSRAM_MPU_VOLTAGE_CTRL);
 		if (!is_trimmed) {
 			/* Trimm value is 0 for this unit.
 			 * we set force overide, insted of efuse.
 			 */
 			omap_ctrl_writel(0x0400040f,
-			OMAP4_CTRL_MODULE_CORE_LDOSRAM_MPU_VOLTAGE_CTRL_OFFSET);
+			OMAP4_CTRL_MODULE_CORE_LDOSRAM_MPU_VOLTAGE_CTRL);
 			omap_ctrl_writel(0x0400040f,
-			OMAP4_CTRL_MODULE_CORE_LDOSRAM_CORE_VOLTAGE_CTRL_OFFSET);
+			OMAP4_CTRL_MODULE_CORE_LDOSRAM_CORE_VOLTAGE_CTRL);
 			omap_ctrl_writel(0x0400040f,
-			OMAP4_CTRL_MODULE_CORE_LDOSRAM_IVA_VOLTAGE_CTRL_OFFSET);
+			OMAP4_CTRL_MODULE_CORE_LDOSRAM_IVA_VOLTAGE_CTRL);
 			/* write value of 0x0 to VDAC as per trim recomendation */
 			omap4_ctrl_pad_writel(0x000001c0,
 			OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_EFUSE_1);
@@ -2804,18 +2691,17 @@ static int __init omap_voltage_init(void)
 			 * Set SRAM MPU/CORE/IVA LDO RETMODE
 			 * Setting RETMODE for un-trimmed units cause random
 			 * system hang. So enabling it only for trimmed units.
-			 * For 4430 series keep MPU SLDO at 0,that boards can hung on
-			 * RET -> ON transition, 4460 not impacted.
-			 */
+			 * for 4430 series keep MPU SLDO at 0,that boards can hung on
+			 * RET -> ON transition, 4460 not impacted. */
 			prm_rmw_mod_reg_bits(OMAP4430_RETMODE_ENABLE_MASK,
 				0x1 << OMAP4430_RETMODE_ENABLE_SHIFT,
 				OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_LDO_SRAM_CORE_CTRL_OFFSET);
-			prm_rmw_mod_reg_bits(OMAP4430_RETMODE_ENABLE_MASK,
-				(cpu_is_omap446x()?0x1:0x0) << OMAP4430_RETMODE_ENABLE_SHIFT,
-				OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_LDO_SRAM_MPU_CTRL_OFFSET);
-			prm_rmw_mod_reg_bits(OMAP4430_RETMODE_ENABLE_MASK,
+				prm_rmw_mod_reg_bits(OMAP4430_RETMODE_ENABLE_MASK,
+				0x0 << OMAP4430_RETMODE_ENABLE_SHIFT,
+			OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_LDO_SRAM_MPU_CTRL_OFFSET);
+				prm_rmw_mod_reg_bits(OMAP4430_RETMODE_ENABLE_MASK,
 				0x1 << OMAP4430_RETMODE_ENABLE_SHIFT,
-				OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_LDO_SRAM_IVA_CTRL_OFFSET);
+			OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_LDO_SRAM_IVA_CTRL_OFFSET);
 		}
 	}
 

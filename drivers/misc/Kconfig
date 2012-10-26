@@ -430,17 +430,11 @@ config APANIC_PLABEL
 	 If your platform uses a different flash partition label for storing
  	 crashdumps, enter it here.
 
-config OMAP4_DUTY_CYCLE
-	tristate "Control OPP_NITRO usage based on duty cycle strategy"
-	default n
-	---help---
- 	 If you are going to use OPP_NITRO with high level of leakage which.
- 	 could pontentially sustain a thermal runaway, say Y here.
-
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
 source "drivers/misc/iwmc3200top/Kconfig"
 source "drivers/misc/ti-st/Kconfig"
+source "drivers/misc/bma250/Kconfig"
 
 endif # MISC_DEVICES

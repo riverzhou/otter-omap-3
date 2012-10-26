@@ -144,19 +144,19 @@ struct reg_type {
 };
 
 static struct reg_type reg_map[] = {
-	{"MCSPI_REV", 0x100},
-	{"MCSPI_SYSCONFIG", 0x110},
-	{"MCSPI_SYSSTATUS", 0x114},
-	{"MCSPI_IRQSTATUS", 0x118},
-	{"MCSPI_IRQENABLE", 0x01C},
-	{"MCSPI_WAKEUPENABLE", 0x120},
-	{"MCSPI_SYST", 0x124},
-	{"MCSPI_MODULCTRL", 0x128},
-	{"MCSPI_XFERLEVEL", 0x17c},
-	{"CH0", 0x12C},
-	{"CH1", 0x140},
-	{"CH2", 0x154},
-	{"CH3", 0x168}
+	{"MCSPI_REV", 0x0},
+	{"MCSPI_SYSCONFIG", 0x10},
+	{"MCSPI_SYSSTATUS", 0x14},
+	{"MCSPI_IRQSTATUS", 0x18},
+	{"MCSPI_IRQENABLE", 0x1C},
+	{"MCSPI_WAKEUPENABLE", 0x20},
+	{"MCSPI_SYST", 0x24},
+	{"MCSPI_MODULCTRL", 0x28},
+	{"MCSPI_XFERLEVEL", 0x7c},
+	{"CH0", 0x2C},
+	{"CH1", 0x40},
+	{"CH2", 0x54},
+	{"CH3", 0x68}
 };
 
 static struct reg_type ch_reg_type[] = {

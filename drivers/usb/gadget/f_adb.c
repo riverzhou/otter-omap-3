@@ -321,7 +321,6 @@ requeue_req:
 	if (ret < 0) {
 		dev->error = 1;
 		r = ret;
-		usb_ep_dequeue(dev->ep_out, req);
 		goto done;
 	}
 	if (!dev->error) {
@@ -544,11 +543,6 @@ static int adb_function_set_alt(struct usb_function *f,
 	int ret;
 
 	DBG(cdev, "adb_function_set_alt intf: %d alt: %d\n", intf, alt);
-	if (dev->online) {
-		DBG(cdev, "EPs are already enabled,disable the EPs\n");
-		usb_ep_disable(dev->ep_in);
-		usb_ep_disable(dev->ep_out);
-	}
 	ret = usb_ep_enable(dev->ep_in,
 			ep_choose(cdev->gadget,
 				&adb_highspeed_in_desc,

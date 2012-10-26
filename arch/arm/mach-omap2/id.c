@@ -25,17 +25,10 @@
 #include <plat/control.h>
 #include <plat/cpu.h>
 
-#define FUSE_MPU_DPLL_BITMASK	0xC0000
-#define FUSE_MPU_DPLL_BITOFFSET 18
-#define DCC_1_2G		0x01
-#define DCC_1_5G		0x03
-
 static struct omap_chip_id omap_chip;
 static unsigned int omap_revision;
-static bool omap4_sb_off;
 
 u32 omap3_features;
-u32 omap4_features;
 
 unsigned int omap_rev(void)
 {
@@ -65,7 +58,7 @@ int omap_type(void)
 	} else if (cpu_is_omap34xx()) {
 		val = omap_ctrl_readl(OMAP343X_CONTROL_STATUS);
 	} else if (cpu_is_omap44xx()) {
-		val = omap_ctrl_readl(OMAP4_CTRL_MODULE_CORE_STATUS_OFFSET);
+		val = omap_ctrl_readl(OMAP4_CTRL_MODULE_CORE_STATUS);
 	} else {
 		pr_err("Cannot detect omap type!\n");
 		goto out;
@@ -193,74 +186,6 @@ void __init omap3_check_features(void)
 	 */
 }
 
-static void __init omap4_check_features(void)
-{
-	u32 val;
-	u32 si_type = 0;
-	omap4_features = 0;
-
-	if (omap_revision >= OMAP4430_REV_ES2_0)
-		omap4_features |= OMAP4_HAS_MPU_1GHZ;
-
-	/* Enable 1.2Gz OPP for 4430 silicon that supports it
-	 * TODO: determine if FUSE_OPP_VDD_MPU_3 is a reliable source to
-	 * determine 1.2Gz availability.
-	 */
-	if (is_omap443x()) {
-		val = __raw_readl(OMAP2_L4_IO_ADDRESS(CTRL_FUSE_OPP_VDD_MPU_3));
-		val &= 0xFFFFFF;
-
-		if (val)
-			omap4_features |= OMAP4_HAS_MPU_1_2GHZ;
-	}
-
-	if (is_omap446x()) {
-		si_type =
-			read_tap_reg(OMAP4_CTRL_MODULE_CORE_STD_FUSE_PROD_ID_1_OFFSET);
-		switch ((si_type & (3 << 16)) >> 16) {
-		case 2:
-			/* High performance device */
-			omap4_features |= ( OMAP4_HAS_MPU_1_5GHZ | OMAP4_HAS_MPU_1_2GHZ );
-			break;
-		case 1:
-		default:
-			/* Standard device */
-			omap4_features |= OMAP4_HAS_MPU_1_2GHZ;
-			break;
-		}
-		/*
-		 * Check MPU_DPLL trimming bits in CONTROL_STD_FUSE_OPP_DPLL_1
-		 * register. According to trim value we should use DCC chain on
-		 * target frequencies higher than 1GHz.
-		 * Used bit[18:19] in OPP_DPLL1 reg for detect this feature
-		 * [Bit18] [Bit19] [max MPU_DPLL freq] [DCC@1.2GHz] [DCC@1.5GHz]
-		 *    0        0         2.0GHz		   +		+
-		 *    1        0         2.4GHz		   -		+
-		 *    1        1         3.0GHz		   -		-
-		 */
-		val = omap_ctrl_readl(
-			OMAP4_CTRL_MODULE_CORE_STD_FUSE_OPP_DPLL_1_OFFSET);
-
-		val = (val & FUSE_MPU_DPLL_BITMASK) >> FUSE_MPU_DPLL_BITOFFSET;
-		omap4_features |= (OMAP4_HAS_DCC_1_5GHZ | OMAP4_HAS_DCC_1_2GHZ);
-		omap4_features &= ~((val == DCC_1_5G) ? (OMAP4_HAS_DCC_1_2GHZ |
-						 OMAP4_HAS_DCC_1_5GHZ) :
-				    (val == DCC_1_2G) ? OMAP4_HAS_DCC_1_2GHZ : 0);
-	}
-
-	if (omap4_sb_off)
-		omap4_features &= ~(is_omap446x() ? OMAP4_HAS_MPU_1_5GHZ :
-							OMAP4_HAS_MPU_1_2GHZ);
-}
-
-static int __init omap4_opp_sb_off_switch(char *val)
-{
-	omap4_sb_off = true;
-	return 0;
-}
-
-early_param("opp_sb_off", omap4_opp_sb_off_switch);
-
 void __init omap3_check_revision(void)
 {
 	u32 cpuid, idcode;
@@ -357,6 +282,7 @@ void __init omap3_check_revision(void)
 #define MAX_ID_STRING		(4*8 + 4)
 #define DIE_ID_REG_BASE		(L4_44XX_PHYS + 0x2000)
 #define DIE_ID_REG_OFFSET	0x200
+#define OMAP4_PRM_RSTST		0x4A307B04
 
 void __init omap4_check_revision(void)
 {
@@ -448,19 +374,6 @@ void __init omap4_check_revision(void)
 				dot = 3;
 			}
 			break;
-		case 0xa:
-			if (omap_rev_reg == 0x00) {
-				omap_revision = OMAP4460_REV_ES1_0;
-				omap_chip.oc |= CHIP_IS_OMAP4460ES1_0;
-				rev = 1;
-				dot = 0;
-			} else {
-				omap_revision = OMAP4460_REV_ES1_1;
-				omap_chip.oc |= CHIP_IS_OMAP4460ES1_1;
-				rev = 1;
-				dot = 1;
-			}
-			break;
 		default:
 			omap_revision = OMAP4430_REV_ES2_3;
 			omap_chip.oc |= CHIP_IS_OMAP4430ES2_3;
@@ -513,6 +426,7 @@ void __init omap4_check_revision(void)
 	snprintf(id_string, MAX_ID_STRING, "%08X-%08X",
 						id[1], id[0]);
 	pr_info("Prod-id  (%s)\n", id_string);
+	pr_info("Reset Reason(0x%08x)\n", omap_readl(OMAP4_PRM_RSTST));
 	pr_info("***********************");
 }
 
@@ -615,7 +529,6 @@ void __init omap2_check_revision(void)
 		return;
 	} else if (cpu_is_omap44xx()) {
 		omap4_check_revision();
-		omap4_check_features();
 		return;
 	} else {
 		pr_err("OMAP revision unknown, please fix!\n");

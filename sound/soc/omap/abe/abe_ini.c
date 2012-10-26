@@ -83,9 +83,9 @@ void abe_build_scheduler_table()
 	   IN "abe_init_io_tasks" */
 	memset(abe->MultiFrame, 0, sizeof(abe->MultiFrame));
 
-#define TASK_IO_PDM_UL_SLT 0
-#define TASK_IO_PDM_UL_IDX 0
-	abe->MultiFrame[0][0] = 0;
+#define TASK_IO_VX_DL_SLT 0
+#define TASK_IO_VX_DL_IDX 2
+	abe->MultiFrame[0][2] = 0;
 #define TASK_ASRC_VX_DL_SLT 0
 #define TASK_ASRC_VX_DL_IDX 3
 	abe->MultiFrame[0][3] = ABE_TASK_ID(C_ABE_FW_TASK_ASRC_VX_DL_8);
@@ -113,16 +113,18 @@ void abe_build_scheduler_table()
 	abe->MultiFrame[4][3] = ABE_TASK_ID(C_ABE_FW_TASK_VXREC_SPLIT);
 	abe->MultiFrame[4][6] = ABE_TASK_ID(C_ABE_FW_TASK_VIBRA1);
 	abe->MultiFrame[4][7] = ABE_TASK_ID(C_ABE_FW_TASK_VIBRA2);
-
 	abe->MultiFrame[5][0] = 0;
 	abe->MultiFrame[5][1] = ABE_TASK_ID(C_ABE_FW_TASK_EARP_48_96_LP);
+#define TASK_IO_PDM_UL_SLT 5
+#define TASK_IO_PDM_UL_IDX 2
+	abe->MultiFrame[5][2] = 0;
 	abe->MultiFrame[5][7] = ABE_TASK_ID(C_ABE_FW_TASK_VIBRA_SPLIT);
 	abe->MultiFrame[6][0] = ABE_TASK_ID(C_ABE_FW_TASK_EARP_48_96_LP);
-	abe->MultiFrame[6][4] = ABE_TASK_ID(C_ABE_FW_TASK_EchoMixer);
-	abe->MultiFrame[6][5] = ABE_TASK_ID(C_ABE_FW_TASK_BT_UL_SPLIT);
+	abe->MultiFrame[6][5] = ABE_TASK_ID(C_ABE_FW_TASK_EchoMixer);
 #define TASK_IO_PDM_DL_HALF1_SLT 7
 #define TASK_IO_PDM_DL_HALF1_IDX 0
 	abe->MultiFrame[7][0] = 0;
+	abe->MultiFrame[7][2] = ABE_TASK_ID(C_ABE_FW_TASK_BT_UL_SPLIT);
 	abe->MultiFrame[7][3] = ABE_TASK_ID(C_ABE_FW_TASK_DBG_SYNC);
 	abe->MultiFrame[7][5] = ABE_TASK_ID(C_ABE_FW_TASK_ECHO_REF_SPLIT);
 	abe->MultiFrame[8][2] = ABE_TASK_ID(C_ABE_FW_TASK_DMIC1_96_48_LP);
@@ -192,26 +194,17 @@ void abe_build_scheduler_table()
 	abe->MultiFrame[20][0] = 0;
 	abe->MultiFrame[20][6] = ABE_TASK_ID(C_ABE_FW_TASK_ASRC_MM_EXT_IN);
 	abe->MultiFrame[21][1] = ABE_TASK_ID(C_ABE_FW_TASK_DEBUGTRACE_VX_ASRCs);
-
-#define TASK_CHECK_IIR_RIGHT_SLT 21
-#define TASK_CHECK_IIR_RIGHT_IDX 2
-	abe->MultiFrame[21][2] = ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_RIGHT_8K);
 #define TASK_IO_MM_EXT_IN_SLT 21
 #define TASK_IO_MM_EXT_IN_IDX 3
 	abe->MultiFrame[21][3] = 0;
 	/* MUST STAY ON SLOT 22 */
 	abe->MultiFrame[22][0] = ABE_TASK_ID(C_ABE_FW_TASK_DEBUG_IRQFIFO);
 	abe->MultiFrame[22][1] = ABE_TASK_ID(C_ABE_FW_TASK_INIT_FW_MEMORY);
-#define TASK_IO_VX_DL_SLT 22
-#define TASK_IO_VX_DL_IDX 2
 	abe->MultiFrame[22][2] = 0;
 	/* MM_EXT_IN_SPLIT task must be after IO_MM_EXT_IN and before
 	   ASRC_MM_EXT_IN in order to manage OPP50 <-> transitions */
 	abe->MultiFrame[22][4] = ABE_TASK_ID(C_ABE_FW_TASK_MM_EXT_IN_SPLIT);
 	abe->MultiFrame[23][0] = ABE_TASK_ID(C_ABE_FW_TASK_GAIN_UPDATE);
-#define TASK_CHECK_IIR_LEFT_SLT 23
-#define TASK_CHECK_IIR_LEFT_IDX 2
-	abe->MultiFrame[23][2] = ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_LEFT_8K);
 
 	abe_block_copy(COPY_FROM_HOST_TO_ABE, ABE_DMEM, D_multiFrame_ADDR,
 		       (u32 *) abe->MultiFrame, sizeof(abe->MultiFrame));
@@ -712,10 +705,6 @@ void abe_init_io_tasks(u32 id, abe_data_format_t *format,
 			abe->MultiFrame[TASK_IO_VX_DL_SLT][TASK_IO_VX_DL_IDX] =
 					ABE_TASK_ID(C_ABE_FW_TASK_IO_VX_DL);
 			if (abe_port[id].format.f == 8000) {
-				abe->MultiFrame[TASK_CHECK_IIR_RIGHT_SLT][TASK_CHECK_IIR_RIGHT_IDX] =
-					ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_RIGHT_8K);
-				abe->MultiFrame[TASK_CHECK_IIR_LEFT_SLT][TASK_CHECK_IIR_LEFT_IDX] =
-					ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_LEFT_8K);
 				abe->MultiFrame[TASK_VX_DL_SLT][TASK_VX_DL_IDX] =
 					ABE_TASK_ID(C_ABE_FW_TASK_VX_DL_8_48_FIR);
 				/*Voice_8k_DL_labelID */
@@ -738,10 +727,6 @@ void abe_init_io_tasks(u32 id, abe_data_format_t *format,
 						ABE_TASK_ID(C_ABE_FW_TASK_ASRC_VX_UL_8_SIB);
 				}
 			} else {
-				abe->MultiFrame[TASK_CHECK_IIR_RIGHT_SLT][TASK_CHECK_IIR_RIGHT_IDX] =
-					ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_RIGHT_16K);
-				abe->MultiFrame[TASK_CHECK_IIR_LEFT_SLT][TASK_CHECK_IIR_LEFT_IDX] =
-					ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_LEFT_16K);
 				abe->MultiFrame[TASK_VX_DL_SLT][TASK_VX_DL_IDX] =
 					ABE_TASK_ID(C_ABE_FW_TASK_VX_DL_16_48);
 				/* Voice_16k_DL_labelID */
@@ -770,10 +755,6 @@ void abe_init_io_tasks(u32 id, abe_data_format_t *format,
 			abe->MultiFrame[TASK_IO_VX_UL_SLT][TASK_IO_VX_UL_IDX] =
 					ABE_TASK_ID(C_ABE_FW_TASK_IO_VX_UL);
 			if (abe_port[id].format.f == 8000) {
-				abe->MultiFrame[TASK_CHECK_IIR_RIGHT_SLT][TASK_CHECK_IIR_RIGHT_IDX] =
-					ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_RIGHT_8K);
-				abe->MultiFrame[TASK_CHECK_IIR_LEFT_SLT][TASK_CHECK_IIR_LEFT_IDX] =
-					ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_LEFT_8K);
 				abe->MultiFrame[TASK_VX_UL_SLT][TASK_VX_UL_IDX] =
 					ABE_TASK_ID(C_ABE_FW_TASK_VX_UL_48_8);
 				/* MultiFrame[TASK_ECHO_SLT][TASK_ECHO_IDX] =
@@ -797,10 +778,6 @@ void abe_init_io_tasks(u32 id, abe_data_format_t *format,
 						ABE_TASK_ID(C_ABE_FW_TASK_ASRC_VX_UL_8);
 				}
 			} else {
-				abe->MultiFrame[TASK_CHECK_IIR_RIGHT_SLT][TASK_CHECK_IIR_RIGHT_IDX] =
-					ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_RIGHT_16K);
-				abe->MultiFrame[TASK_CHECK_IIR_LEFT_SLT][TASK_CHECK_IIR_LEFT_IDX] =
-					ABE_TASK_ID(C_ABE_FW_TASK_CHECK_IIR_LEFT_16K);
 				abe->MultiFrame[TASK_VX_UL_SLT][TASK_VX_UL_IDX] =
 					ABE_TASK_ID(C_ABE_FW_TASK_VX_UL_48_16);
 				/* MultiFrame[TASK_ECHO_SLT][TASK_ECHO_IDX] =
@@ -1178,42 +1155,42 @@ void abe_reset_all_ports(void)
 	for (i = 0; i < LAST_PORT_ID; i++)
 		abe_reset_port(i);
 	/* mixers' configuration */
-	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_5MS, MIX_DL1_INPUT_MM_DL);
-	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_5MS, MIX_DL1_INPUT_MM_UL2);
-	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_5MS, MIX_DL1_INPUT_VX_DL);
-	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_5MS, MIX_DL1_INPUT_TONES);
-	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_5MS, MIX_DL2_INPUT_TONES);
-	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_5MS, MIX_DL2_INPUT_VX_DL);
-	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_5MS, MIX_DL2_INPUT_MM_DL);
-	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_5MS, MIX_DL2_INPUT_MM_UL2);
-	abe_write_mixer(MIXSDT, MUTE_GAIN, RAMP_5MS, MIX_SDT_INPUT_UP_MIXER);
-	abe_write_mixer(MIXSDT, GAIN_0dB, RAMP_5MS, MIX_SDT_INPUT_DL1_MIXER);
-	abe_write_mixer(MIXECHO, MUTE_GAIN, RAMP_5MS, MIX_ECHO_DL1);
-	abe_write_mixer(MIXECHO, MUTE_GAIN, RAMP_5MS, MIX_ECHO_DL2);
-	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_5MS, MIX_AUDUL_INPUT_MM_DL);
-	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_5MS, MIX_AUDUL_INPUT_TONES);
-	abe_write_mixer(MIXAUDUL, GAIN_0dB, RAMP_5MS, MIX_AUDUL_INPUT_UPLINK);
-	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_5MS, MIX_AUDUL_INPUT_VX_DL);
-	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_5MS, MIX_VXREC_INPUT_TONES);
-	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_5MS, MIX_VXREC_INPUT_VX_DL);
-	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_5MS, MIX_VXREC_INPUT_MM_DL);
-	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_5MS, MIX_VXREC_INPUT_VX_UL);
-	abe_write_gain(GAINS_DMIC1, GAIN_0dB, RAMP_5MS, GAIN_LEFT_OFFSET);
-	abe_write_gain(GAINS_DMIC1, GAIN_0dB, RAMP_5MS, GAIN_RIGHT_OFFSET);
-	abe_write_gain(GAINS_DMIC2, GAIN_0dB, RAMP_5MS, GAIN_LEFT_OFFSET);
-	abe_write_gain(GAINS_DMIC2, GAIN_0dB, RAMP_5MS, GAIN_RIGHT_OFFSET);
-	abe_write_gain(GAINS_DMIC3, GAIN_0dB, RAMP_5MS, GAIN_LEFT_OFFSET);
-	abe_write_gain(GAINS_DMIC3, GAIN_0dB, RAMP_5MS, GAIN_RIGHT_OFFSET);
-	abe_write_gain(GAINS_AMIC, GAIN_0dB, RAMP_5MS, GAIN_LEFT_OFFSET);
-	abe_write_gain(GAINS_AMIC, GAIN_0dB, RAMP_5MS, GAIN_RIGHT_OFFSET);
-	abe_write_gain(GAINS_SPLIT, GAIN_0dB, RAMP_5MS, GAIN_LEFT_OFFSET);
-	abe_write_gain(GAINS_SPLIT, GAIN_0dB, RAMP_5MS, GAIN_RIGHT_OFFSET);
-	abe_write_gain(GAINS_DL1, GAIN_0dB, RAMP_5MS, GAIN_LEFT_OFFSET);
-	abe_write_gain(GAINS_DL1, GAIN_0dB, RAMP_5MS, GAIN_RIGHT_OFFSET);
-	abe_write_gain(GAINS_DL2, GAIN_0dB, RAMP_5MS, GAIN_LEFT_OFFSET);
-	abe_write_gain(GAINS_DL2, GAIN_0dB, RAMP_5MS, GAIN_RIGHT_OFFSET);
-	abe_write_gain(GAINS_BTUL, GAIN_0dB, RAMP_5MS, GAIN_LEFT_OFFSET);
-	abe_write_gain(GAINS_BTUL, GAIN_0dB, RAMP_5MS, GAIN_RIGHT_OFFSET);
+	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_100MS, MIX_DL1_INPUT_MM_DL);
+	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_100MS, MIX_DL1_INPUT_MM_UL2);
+	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_100MS, MIX_DL1_INPUT_VX_DL);
+	abe_write_mixer(MIXDL1, MUTE_GAIN, RAMP_100MS, MIX_DL1_INPUT_TONES);
+	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_100MS, MIX_DL2_INPUT_TONES);
+	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_100MS, MIX_DL2_INPUT_VX_DL);
+	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_100MS, MIX_DL2_INPUT_MM_DL);
+	abe_write_mixer(MIXDL2, MUTE_GAIN, RAMP_100MS, MIX_DL2_INPUT_MM_UL2);
+	abe_write_mixer(MIXSDT, MUTE_GAIN, RAMP_100MS, MIX_SDT_INPUT_UP_MIXER);
+	abe_write_mixer(MIXSDT, GAIN_0dB, RAMP_100MS, MIX_SDT_INPUT_DL1_MIXER);
+	abe_write_mixer(MIXECHO, MUTE_GAIN, RAMP_100MS, MIX_ECHO_DL1);
+	abe_write_mixer(MIXECHO, MUTE_GAIN, RAMP_100MS, MIX_ECHO_DL2);
+	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_100MS, MIX_AUDUL_INPUT_MM_DL);
+	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_100MS, MIX_AUDUL_INPUT_TONES);
+	abe_write_mixer(MIXAUDUL, GAIN_0dB, RAMP_100MS, MIX_AUDUL_INPUT_UPLINK);
+	abe_write_mixer(MIXAUDUL, MUTE_GAIN, RAMP_100MS, MIX_AUDUL_INPUT_VX_DL);
+	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_100MS, MIX_VXREC_INPUT_TONES);
+	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_100MS, MIX_VXREC_INPUT_VX_DL);
+	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_100MS, MIX_VXREC_INPUT_MM_DL);
+	abe_write_mixer(MIXVXREC, MUTE_GAIN, RAMP_100MS, MIX_VXREC_INPUT_VX_UL);
+	abe_write_gain(GAINS_DMIC1, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
+	abe_write_gain(GAINS_DMIC1, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
+	abe_write_gain(GAINS_DMIC2, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
+	abe_write_gain(GAINS_DMIC2, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
+	abe_write_gain(GAINS_DMIC3, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
+	abe_write_gain(GAINS_DMIC3, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
+	abe_write_gain(GAINS_AMIC, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
+	abe_write_gain(GAINS_AMIC, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
+	abe_write_gain(GAINS_SPLIT, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
+	abe_write_gain(GAINS_SPLIT, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
+	abe_write_gain(GAINS_DL1, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
+	abe_write_gain(GAINS_DL1, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
+	abe_write_gain(GAINS_DL2, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
+	abe_write_gain(GAINS_DL2, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
+	abe_write_gain(GAINS_BTUL, GAIN_0dB, RAMP_100MS, GAIN_LEFT_OFFSET);
+	abe_write_gain(GAINS_BTUL, GAIN_0dB, RAMP_100MS, GAIN_RIGHT_OFFSET);
 }
 
 /**
@@ -1345,6 +1322,14 @@ void abe_clean_temporary_buffers(u32 id)
 			      S_EARP_48_96_LP_data_sizeof << 3);
 		abe_reset_mem(ABE_SMEM, S_IHF_48_96_LP_data_ADDR << 3,
 			      S_IHF_48_96_LP_data_sizeof << 3);
+		abe_reset_mem(ABE_SMEM, S_APS_DL1_EQ_data_ADDR << 3,
+			      S_APS_DL1_EQ_data_sizeof << 3);
+		abe_reset_mem(ABE_SMEM, S_APS_DL2_EQ_data_ADDR << 3,
+			      S_APS_DL2_EQ_data_sizeof << 3);
+		abe_reset_mem(ABE_SMEM, S_APS_DL2_L_IIRmem1_ADDR << 3,
+			      S_APS_DL2_L_IIRmem1_sizeof << 3);
+		abe_reset_mem(ABE_SMEM, S_APS_DL2_R_IIRmem1_ADDR << 3,
+			      S_APS_DL2_R_IIRmem1_sizeof << 3);
 		abe_reset_gain_mixer(GAINS_DL1, GAIN_LEFT_OFFSET);
 		abe_reset_gain_mixer(GAINS_DL1, GAIN_RIGHT_OFFSET);
 		abe_reset_gain_mixer(GAINS_DL2, GAIN_LEFT_OFFSET);

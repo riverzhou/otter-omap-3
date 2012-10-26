@@ -380,18 +380,12 @@ int gpsdrv_release(struct inode *inod, struct file *file)
 	 */
 	tasklet_disable(&hgps->gpsdrv_tx_tsklet);
 	tasklet_kill(&hgps->gpsdrv_tx_tsklet);
-	/* Clear registered bit if already registered */
+	/* Cleat registered bit if already registered */
 	if (test_and_clear_bit(GPS_ST_REGISTERED, &hgps->state)) {
 		if (st_unregister(&gpsdrv_proto) < 0) {
 			GPSDRV_ERR(" st_unregister failed");
-			/* Reset Tx count value and st_write function pointer */
-			hgps->tx_count = 0;
-			hgps->st_write = NULL;
-
-			skb_queue_purge(&hgps->rx_list);
-			skb_queue_purge(&hgps->tx_list);
-			kfree(hgps);
-			file->private_data = NULL;
+			/* Re-Enable the task-let if un-register fails */
+			tasklet_enable(&hgps->gpsdrv_tx_tsklet);
 			return GPS_ERR_FAILURE;
 		}
 	}
@@ -548,7 +542,7 @@ ssize_t gpsdrv_write(struct file *file, const char __user *data,
 	}
 
 
-	skb = alloc_skb(size + GPS_CH9_PKT_HDR_SIZE, GFP_KERNEL);
+	skb = alloc_skb(size + GPS_CH9_PKT_HDR_SIZE, GFP_ATOMIC);
 	/* Validate Created SKB */
 	if (NULL == skb) {
 		GPSDRV_ERR("Error aaloacting SKB");

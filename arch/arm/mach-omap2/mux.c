@@ -252,17 +252,6 @@ u16 omap_mux_read_signal(const char *muxname)
 	return -ENODEV;
 }
 
-int omap_mux_wakeup_event(const char *muxname)
-{
-	u16 val;
-
-	val = omap_mux_read_signal(muxname);
-	if ((val == -ENODEV) || (val & OMAP44XX_PADCONF_WAKEUPEVENT0) == 0)
-		return 0;
-	else
-		return 1;
-}
-
 int omap_mux_enable_wakeup(const char *muxname)
 {
 	u16 val;
@@ -323,8 +312,7 @@ static inline void omap_mux_decode(struct seq_file *s, u16 val)
 
 	OMAP_MUX_TEST_FLAG(val, OMAP_PIN_OFF_WAKEUPENABLE);
 	if (val & OMAP_OFF_EN) {
-		if (val & OMAP_OFFOUT_EN) {
-			/* Input */
+		if (!(val & OMAP_OFFOUT_EN)) {
 			if (!(val & OMAP_OFF_PULL_UP)) {
 				OMAP_MUX_TEST_FLAG(val,
 					OMAP_PIN_OFF_INPUT_PULLDOWN);
@@ -333,7 +321,6 @@ static inline void omap_mux_decode(struct seq_file *s, u16 val)
 					OMAP_PIN_OFF_INPUT_PULLUP);
 			}
 		} else {
-			/* Output */
 			if (!(val & OMAP_OFFOUT_VAL)) {
 				OMAP_MUX_TEST_FLAG(val,
 					OMAP_PIN_OFF_OUTPUT_LOW);

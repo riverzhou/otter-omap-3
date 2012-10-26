@@ -20,8 +20,7 @@ obj-$(CONFIG_ARCH_OMAP4) += $(prcm-common) $(hwmod-common)
 
 obj-$(CONFIG_OMAP_MCBSP)		+= mcbsp.o
 obj-$(CONFIG_DEBUG_FS)			+= omap_hwmod_debug.o
-obj-$(CONFIG_OMAP_TEMP_SENSOR)		+=temp_sensor_device.o
-obj-$(CONFIG_OMAP4_TPS62361)		+= omap_tps6236x.o
+
 
 # SMP support ONLY available for OMAP4
 obj-$(CONFIG_SMP)			+= omap-smp.o omap-headsmp.o
@@ -191,15 +190,8 @@ obj-$(CONFIG_MACH_IGEP0020)		+= board-igep0020.o \
 					   hsmmc.o
 obj-$(CONFIG_MACH_OMAP3_TOUCHBOOK)	+= board-omap3touchbook.o \
 					   hsmmc.o
-obj-$(CONFIG_MACH_OMAP_BLAZE)		+= board-44xxtablet.o \
-					   omap_phy_internal.o \
-					   board-44xx-identity.o \
-					   omap4_apps_brd_id.o \
-					   hsmmc.o
 obj-$(CONFIG_MACH_OMAP_4430SDP)		+= board-4430sdp.o \
 					   omap_phy_internal.o \
-					   board-44xx-identity.o \
-					   omap4_apps_brd_id.o \
 					   hsmmc.o
 obj-$(CONFIG_MACH_OMAP4_PANDA)		+= board-omap4panda.o \
 					   omap_phy_internal.o \
@@ -211,6 +203,11 @@ endif
 ifeq ($(CONFIG_ARCH_OMAP3),y)
 obj-$(CONFIG_TIWLAN_SDIO)		+= board-zoom2-wifi.o
 endif
+
+obj-$(CONFIG_MACH_OMAP_4430_KC1)		+= board-4430kc1.o \
+					   omap_phy_internal.o \
+					   hsmmc.o \
+						board-kc1-reboot.o
 
 obj-$(CONFIG_MACH_OMAP3517EVM)		+= board-am3517evm.o
 
@@ -232,4 +229,3 @@ obj-y					+= $(smc91x-m) $(smc91x-y)
 obj-$(CONFIG_ARCH_OMAP4)		+= hwspinlocks.o
 obj-$(CONFIG_OMAP_HSI_DEVICE)           += omap_hsi.o
 obj-$(CONFIG_ARCH_OMAP3)		+= twl4030.o
-obj-$(CONFIG_ARCH_OMAP4)		+= omap_dmm.o

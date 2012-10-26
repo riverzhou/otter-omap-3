@@ -75,7 +75,7 @@ const abe_port_t abe_port_init[LAST_PORT_ID] = {
 	   reseted at start Port Name for the debug trace */
 	/* DMIC */ {
 		    OMAP_ABE_PORT_ACTIVITY_IDLE, {96000, SIX_MSB},
-		    NODRIFT, NOCALLBACK, 1, (DMIC_ITER/6),
+		    NODRIFT, NOCALLBACK, 0, (DMIC_ITER/6),
 		    {
 		     SNK_P, DMIC_PORT_PROT,
 		     {{dmem_dmic, dmem_dmic_size, DMIC_ITER} }
@@ -209,7 +209,7 @@ const abe_port_t abe_port_init[LAST_PORT_ID] = {
 			{0, 0}, {0}, "BT_VX_DL"},
 	/* PDM_DL */ {
 		      OMAP_ABE_PORT_ACTIVITY_IDLE, {96000, SIX_MSB},
-		      NODRIFT, NOCALLBACK, 1, (MCPDM_DL_ITER/6),
+		      NODRIFT, NOCALLBACK, 0, (MCPDM_DL_ITER/6),
 		      {SRC_P, MCPDMDL_PORT_PROT, {{dmem_mcpdm,
 						dmem_mcpdm_size} } },
 		      {0, 0},
@@ -240,7 +240,7 @@ const abe_port_t abe_port_init[LAST_PORT_ID] = {
 	 {0, 0}, {0}, "MM_EXT_IN"},
 	/* PCM3_TX */ {
 		       OMAP_ABE_PORT_ACTIVITY_IDLE, {48000, STEREO_MSB},
-		       NODRIFT, NOCALLBACK, 1, 1,
+		       NODRIFT, NOCALLBACK, 0, 1,
 		       {
 			SRC_P, TDM_SERIAL_PORT_PROT, {{
 						      (MCBSP3_DMA_TX *
@@ -253,7 +253,7 @@ const abe_port_t abe_port_init[LAST_PORT_ID] = {
 		       {0, 0}, {0}, "TDM_OUT"},
 	/* PCM3_RX */ {
 		       OMAP_ABE_PORT_ACTIVITY_IDLE, {48000, STEREO_MSB},
-		       NODRIFT, NOCALLBACK, 1, 1,
+		       NODRIFT, NOCALLBACK, 0, 1,
 		       {
 			SRC_P, TDM_SERIAL_PORT_PROT, {{
 						      (MCBSP3_DMA_RX *
@@ -266,7 +266,7 @@ const abe_port_t abe_port_init[LAST_PORT_ID] = {
 		       {0, 0}, {0}, "TDM_IN"},
 	/* SCHD_DBG_PORT */ {
 			     OMAP_ABE_PORT_ACTIVITY_IDLE, {48000, MONO_MSB},
-			     NODRIFT, NOCALLBACK, 1, 1,
+			     NODRIFT, NOCALLBACK, 0, 1,
 			     {
 			      SRC_P, DMAREQ_PORT_PROT, {{
 							(CBPr_DMA_RTX7 *
@@ -796,10 +796,6 @@ const u32 abe_alpha_iir[64] = {
 	0x7FFC01, 0x7FFCA5, 0x7FFD2D, 0x7FFDA1,	/* 8.192 */
 	0x7FFE01, 0x7FFE51, 0x7FFE95, 0x7FFED1,
 };
-
-/* Variable to switch path for headset or handsfree at OPP25*/
-u32 abe_mcpdm_path;
-
 /*
  * ABE_DEBUG DATA
  */
@@ -827,10 +823,10 @@ const u32 abe_port_priority[LAST_PORT_ID - 1] = {
 	MM_UL2_PORT,
 	MM_DL_PORT,
 	TONES_DL_PORT,
-	BT_VX_DL_PORT,
-	BT_VX_UL_PORT,
 	VX_UL_PORT,
 	VX_DL_PORT,
+	BT_VX_DL_PORT,
+	BT_VX_UL_PORT,
 	VIB_DL_PORT,
 };
 

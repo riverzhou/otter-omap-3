@@ -82,28 +82,26 @@ config MACH_OMAP3EVM
 
 config WIFI_CONTROL_FUNC
         bool "Enable WiFi control function abstraction"
-	depends on MACH_OMAP_4430SDP || MACH_OMAP_ZOOM2 || MACH_OMAP_ZOOM3 || MACH_OMAP4_PANDA
+	depends on MACH_OMAP_4430SDP || MACH_OMAP_ZOOM2 || MACH_OMAP_ZOOM3 ||  MACH_OMAP_4430_KC1
         select WIRELESS_EXT
         select WEXT_CORE
         select WEXT_PROC
         select WEXT_PRIV
-        default y
+        default Y
         help
            Enables Power/Reset/Carddetect function abstraction
+config TIWLAN_127x
+        bool "TI WLAN 127x chip select"
+        depends on WIFI_CONTROL_FUNC
+        default Y
+        help
+           Say Y here if you want to select TI's WLAN 127x device.If unsure, say N.
 config TIWLAN_SDIO
         bool "TI WLAN Enhanced SDIO Contoller support"
         depends on MMC_OMAP || MMC_OMAP_MODULE || MMC_OMAP_HS || MMC_OMAP_HS_MODULE
         help
            Say Y here if you want to be able to use TI's WLAN device using the
            SDIO interface. If unsure, say N.
-
-config TIWLAN_127x
-	bool "TI WLAN 127x chip select"
-	depends on WIFI_CONTROL_FUNC
-	default n
-	help
-	   Say Y here if you want to select TI's WLAN 127x device.If unsure, say N.
-
 config TIWLAN_MMC_CONTROLLER
         int "MMC Controller number that TI WLAN chip is connected to"
         range 1 5
@@ -205,17 +203,60 @@ config MACH_OMAP_4430SDP
 	bool "OMAP 4430 SDP board"
 	depends on ARCH_OMAP4
 	select HIGHMEM
+	select TWL6030_PWM
+	select TWL6030_GPADC
 	select TWL6040_VIB if ANDROID_TIMED_OUTPUT && TWL6040_CODEC
-
-config MACH_OMAP_BLAZE
-	bool "OMAP 44xx Tablet board"
-	depends on ARCH_OMAP4
-	select HIGHMEM
-	select TWL6040_VIB if ANDROID_TIMED_OUTPUT && TWL6040_CODEC
+	select NEW_LEDS
+	select LEDS_CLASS
+	select LEDS_PWM
+	select LEDS_GPIO
+	select LEDS_GPIO_PLATFORM
+	select LEDS_OMAP4430_SDP_DISPLAY
+	select LEDS_OMAP4430_SDP_KEYPAD
+	select LEDS_TRIGGERS
+	select LEDS_TRIGGER_TIMER
+	select INPUT_CMA3000_I2C
+#	select SENSORS_BH1780
+	select INPUT_BH1780
+	select MISC_DEVICES
+#	select BMP085
+	select INPUT_BMP085
+	select STAGING
+	select IIO
+#	select SENSORS_HMC5843
+	select INPUT_HMC5843
+	select INPUT_SFH7741
+	select HWMON
+#	select SENSORS_LM75
+	select INPUT_MISC
+	select INPUT_KEYBOARD
+	select INPUT_TOUCHSCREEN
+	select TOUCHSCREEN_SYNTM12XX
+	select POWER_SUPPLY
+	select TWL6030_BCI_BATTERY
+	select CHARGER_BQ2415x
+	select SECURITY_MIDDLEWARE_COMPONENT
+	select CDC_TCXO
 
 config MACH_OMAP4_PANDA
 	bool "OMAP4 based Panda board"
 	depends on ARCH_OMAP4
+
+config MACH_OMAP_4430_KC1
+	bool "OMAP 4430 KC1 board"
+	depends on ARCH_OMAP4
+	select HIGHMEM
+	select TWL6030_PWM
+	select TWL6030_GPADC
+	select NEW_LEDS
+	select LEDS_CLASS
+	select LEDS_OMAP4430_SDP_DISPLAY
+	select MISC_DEVICES
+	select HWMON
+	select INPUT_MISC
+	select INPUT_TOUCHSCREEN
+	select POWER_SUPPLY
+	select SECURITY_MIDDLEWARE_COMPONENT
 
 config ERRATA_OMAP4_AXI2OCP
 	bool "OMAP 4430 axi2ocp errata workaround"
@@ -292,29 +333,3 @@ config OMAP4_KEEP_STATIC_DEPENDENCIES
 	default n
 	help
 	  Select this option to keep the static dependency mapping for OMAP4.
-
-config OMAP4_HSOTG_ED_CORRECTION
-	bool "OMAP 44XX HSOTG Eye diagram correction"
-	depends on ARCH_OMAP4
-	default y
-	help
-	  Select this option to overrive HSOTG PHY settings in
-	  order to improve Eye Diagramm. On 4430 CPUs this should
-	  improve Eye Diagram at least 8%.
-
-config OMAP4_HSOTG_ED_SW2_4460
-	bool "Override SWCAP value for 4460 CPUs"
-	depends on OMAP4_HSOTG_ED_CORRECTION
-	default n
-	help
-	  Select this option for override SWCAP trim code in USBPHY_USB2PHYCM_TRIM
-	  register HSOTG PHY. Override value: 0x24. This should be done on boadrs
-	  with high parasitics in order to improve Eye Diagram.
-
-config OMAP4_TPS62361
-	bool "OMAP4460 MPU power supply PMIC"
-	depends on I2C && ARCH_OMAP4 && TWL4030_CORE
-	default n
-	help
-	  This driver supports TPS62361 PMIC chip. TPS62361 provides
-	  one scalable VDD. This TPS driver has a dependency on the TWL PMIC.

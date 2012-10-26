@@ -179,12 +179,8 @@ static int heapmemmp_ioctl_create(struct heapmemmp_cmd_args *cargs)
 	params.gate = cargs->args.create.knl_gate;
 	handle = heapmemmp_create(&params);
 	cargs->args.create.handle = handle;
-	if (unlikely(handle == NULL)) {
-		cargs->api_status  = -1;
-		status = -EFAULT;
-	} else {
-		cargs->api_status  = 0;
-	}
+	cargs->api_status  = 0;
+
 name_from_usr_error:
 	if (cargs->args.create.name_len > 0)
 		kfree(params.name);

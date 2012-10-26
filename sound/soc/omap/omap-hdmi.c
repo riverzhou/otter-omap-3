@@ -52,7 +52,6 @@ struct omap_hdmi_data {
 };
 
 struct omap_hdmi_data hdmi_data;
-static int hdmi_state;		/* 0 - inactive */
 
 static struct omap_pcm_dma_data omap_hdmi_dai_dma_params = {
 	.name = "HDMI playback",
@@ -68,12 +67,10 @@ static void hdmi_hpd_notifier(int state, void *data)
 
 	if (state) {
 		hdmi_data->active = 1;
-		hdmi_state = 1;
 	} else {
 		if (substream)
 			snd_pcm_stop(substream, SNDRV_PCM_STATE_DISCONNECTED);
 		hdmi_data->active = 0;
-		hdmi_state = 0;
 	}
 }
 
@@ -84,7 +81,6 @@ static void hdmi_pwrchange_notifier(int state, void *data)
 
 	switch (state) {
 	case HDMI_EVENT_POWEROFF:
-		hdmi_state = 0;
 		if (substream) {
 			snd_pcm_stop(substream, SNDRV_PCM_STATE_DISCONNECTED);
 			hdmi_set_audio_power(0);
@@ -114,7 +110,7 @@ static int omap_hdmi_dai_startup(struct snd_pcm_substream *substream,
 				  struct snd_soc_dai *dai)
 {
 	int err = 0;
-	if (!hdmi_data.active || !hdmi_state) {
+	if (!hdmi_data.active) {
 		printk(KERN_ERR "hdmi device not available\n");
 		return -ENODEV;
 	}
@@ -235,7 +231,6 @@ static __devinit int omap_hdmi_probe(struct platform_device *pdev)
 	notifier->hpd_notifier = hdmi_hpd_notifier;
 	notifier->pwrchange_notifier = hdmi_pwrchange_notifier;
 	notifier->private_data = &hdmi_data;
-	hdmi_lib_init();
 	hdmi_add_notifier(notifier);
 
 	return snd_soc_register_dai(&pdev->dev, &omap_hdmi_dai);

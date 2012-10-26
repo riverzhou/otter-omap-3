@@ -36,20 +36,12 @@
 #include "prm-regbits-34xx.h"
 #include "cm.h"
 #include "cm-regbits-34xx.h"
-#include "cm-regbits-44xx.h"
-#include "cm44xx.h"
 
 /* CM_AUTOIDLE_PLL*.AUTO_* bit values */
 #define DPLL_AUTOIDLE_DISABLE			0x0
 #define DPLL_AUTOIDLE_LOW_POWER_STOP		0x1
 
 #define MAX_DPLL_WAIT_TRIES		1000000
-
-#define omap4460_dcc_needed(rate) ((rate > 1200000000 && \
-					omap4_has_dcc_1_5ghz()) || \
-				   (rate > 1000000000 && \
-					omap4_has_dcc_1_2ghz()))
-
 
 /* Private functions */
 
@@ -301,35 +293,11 @@ static void _lookup_sddiv(struct clk *clk, u8 *sd_div, u16 m, u8 n)
  * Program the DPLL with the supplied M, N values, and wait for the DPLL to
  * lock..  Returns -EINVAL upon error, or 0 upon success.
  */
-static int omap3_noncore_dpll_program(struct clk *clk, u16 m, u8 n, u16 freqsel,
-						unsigned long orig_rate)
+static int omap3_noncore_dpll_program(struct clk *clk, u16 m, u8 n, u16 freqsel)
 {
 	struct dpll_data *dd = clk->dpll_data;
 	u8 dco, sd_div;
 	u32 v;
-
-	/*
-	 * On OMAP4460, to obtain MPU DPLL frequency higher
-	 * than 1GHz, DCC (Duty Cycle Correction) needs to
-	 * be enabled.
-	 * Also the interconnect frequency to EMIF should
-	 * be switched between MPU clk divide by 4 (for
-	 * frequencies higher than 920Mhz) and MPU clk divide
-	 * by 2 (for frequencies lower than or equal to 920Mhz)
-	 * Lastly the async bridge to ABE must be MPU clk divide
-	 * by 8 for MPU clk > 748Mhz and MPU clk divide by 4
-	 * for lower frequencies.
-	 * TODO: For now use a strcmp, but need to find a
-	 * better way to identify the MPU dpll.
-	 */
-	if (cpu_is_omap4460() && !strcmp(clk->name, "dpll_mpu_ck")) {
-		/* DCC control */
-		v = __raw_readl(dd->mult_div1_reg);
-		if ((orig_rate <= 1000000000) && (v & OMAP4460_DCC_EN_MASK)) {
-			v &= ~OMAP4460_DCC_EN_MASK; /* Disable DCC */
-			__raw_writel(v, dd->mult_div1_reg);
-		}
-	}
 
 	/* 3430 ES2 TRM: 4.7.6.9 DPLL Programming Sequence */
 	_omap3_noncore_dpll_bypass(clk);
@@ -370,30 +338,6 @@ static int omap3_noncore_dpll_program(struct clk *clk, u16 m, u8 n, u16 freqsel,
 	/* REVISIT: Set ramp-up delay? */
 
 	_omap3_noncore_dpll_lock(clk);
-
-	if (cpu_is_omap4460() && !strcmp(clk->name, "dpll_mpu_ck")) {
-		/* DCC control */
-		if (omap4460_dcc_needed(orig_rate)) {
-			v &= ~OMAP4460_DCC_COUNT_MAX_MASK;
-			v |= (5 << OMAP4460_DCC_COUNT_MAX_SHIFT);
-			__raw_writel(v, dd->mult_div1_reg);
-			v |= OMAP4460_DCC_EN_MASK; /* Enable DCC */
-			__raw_writel(v, dd->mult_div1_reg);
-		}
-
-		/* EMIF/ABE clock rate control */
-		v = __raw_readl(OMAP4430_CM_MPU_MPU_CLKCTRL);
-		if (orig_rate > 920000000)
-			v |= OMAP4460_CLKSEL_EMIF_DIV_MODE_MASK;
-		else
-			v &= ~OMAP4460_CLKSEL_EMIF_DIV_MODE_MASK;
-
-		if (orig_rate > 748000000)
-			v |= OMAP4460_CLKSEL_ABE_DIV_MODE_MASK;
-		else
-			v &= ~OMAP4460_CLKSEL_ABE_DIV_MODE_MASK;
-		__raw_writel(v, OMAP4430_CM_MPU_MPU_CLKCTRL);
-	}
 
 	return 0;
 }
@@ -485,7 +429,6 @@ int omap3_noncore_dpll_set_rate(struct clk *clk, unsigned long rate)
 	u16 freqsel = 0;
 	struct dpll_data *dd;
 	int ret;
-	unsigned long orig_rate = 0;
 
 	if (!clk || !rate)
 		return -EINVAL;
@@ -513,18 +456,6 @@ int omap3_noncore_dpll_set_rate(struct clk *clk, unsigned long rate)
 		if (!ret)
 			new_parent = dd->clk_bypass;
 	} else {
-		/*
-		 * On 4460, the MPU clk for frequencies higher than 1Ghz
-		 * is sourced from CLKOUTX2_M3, instead of CLKOUT_M2, while
-		 * value of M3 is fixed to 1. Hence for frequencies higher
-		 * than 1 Ghz, lock the DPLL at half the rate so the
-		 * CLKOUTX2_M3 then matches the requested rate.
-		 */
-		if (cpu_is_omap4460() && !strcmp(clk->name, "dpll_mpu_ck")
-					&& omap4460_dcc_needed(rate)) {
-			orig_rate = rate;
-			rate = rate/2;
-		}
 		if (dd->last_rounded_rate != rate)
 			rate = clk->round_rate(clk, rate);
 
@@ -539,14 +470,11 @@ int omap3_noncore_dpll_set_rate(struct clk *clk, unsigned long rate)
 				WARN_ON(1);
 		}
 
-		/* Set the rate back to original for book keeping*/
-		if (orig_rate)
-			rate = orig_rate;
 		pr_debug("clock: %s: set rate: locking rate to %lu.\n",
 			 clk->name, rate);
 
 		ret = omap3_noncore_dpll_program(clk, dd->last_rounded_m,
-				 dd->last_rounded_n, freqsel, rate);
+						 dd->last_rounded_n, freqsel);
 		if (!ret)
 			new_parent = dd->clk_ref;
 	}

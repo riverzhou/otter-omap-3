@@ -637,18 +637,6 @@ int abe_remote_debugger_interface(u32 n, u8 *p);
  */
 int abe_enable_test_pattern(u32 smem_id, u32 on_off);
 
-
-/**
- * abe_write_pdmdl_offset - write the desired offset on the DL1/DL2 paths
- *
- * Parameters:
- *   path: 1 for the DL1 ABE path, 2 for the DL2 ABE path
- *   offset_left: integer value that will be added on all PDM left samples
- *   offset_right: integer value that will be added on all PDM right samples
- *
- */
-void abe_write_pdmdl_offset(u32 path, u32 offset_left, u32 offset_right);
-
 /**
  * abe_init_mem - Allocate Kernel space memory map for ABE
  *
@@ -666,14 +654,7 @@ void abe_add_subroutine(u32 *id, abe_subroutine2 f, u32 nparam, u32 *params);
  * processing
  */
 int abe_read_next_ping_pong_buffer(u32 port, u32 *p, u32 *n);
-/**
- * abe_write_select_pdm_output - Select the path for OPP25 route input
- *
- * Parameters:
- *   path: 1 for output om headset, 2 for output on handsfree
- *
- */
-void abe_write_select_pdm_output(u32 path);
 
 extern u32 abe_irq_pingpong_player_id;
+
 #endif/* _ABE_API_H_ */

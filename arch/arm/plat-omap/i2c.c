@@ -36,8 +36,6 @@
 #include <plat/omap-pm.h>
 #include <plat/omap_device.h>
 
-#include <plat/control.h>
-
 #define OMAP_I2C_SIZE		0x3f
 #define OMAP1_I2C_BASE		0xfffb3800
 
@@ -255,69 +253,6 @@ out:
 	return err;
 }
 subsys_initcall(omap_register_i2c_bus_cmdline);
-
-/**
- * omap2_i2c_pullup - setup pull-up resistors for I2C bus
- * @bus_id: bus id counting from number 1
- * @sda_pullup: Pull-up resistor for SDA and SCL pins
- *
- */
-void omap2_i2c_pullup(int bus_id, unsigned int pullup)
-{
-	u32 val;
-
-	if (bus_id < 1 || bus_id > omap_i2c_nr_ports() ||
-	    pullup > I2C_PULLUP_STD_NA_FAST_300_OM) {
-		pr_err("Tying to setup wrong pullup (%d) or use wrong I2C port (%d)\n", pullup, bus_id);
-		return;
-	}
-
-	val = omap4_ctrl_pad_readl(OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_I2C_0);
-
-	switch (bus_id) {
-	case 1:
-		/* Setup PULL-UP resistor for I2C-1 */
-		val &= ~(OMAP4_I2C1_SDA_LOAD_BITS_MASK  |
-			 OMAP4_I2C1_SCL_LOAD_BITS_MASK  |
-			 OMAP4_I2C1_SDA_PULLUPRESX_MASK |
-			 OMAP4_I2C1_SCL_PULLUPRESX_MASK);
-		val |= ((pullup << OMAP4_I2C1_SDA_LOAD_BITS_SHIFT) |
-			(pullup << OMAP4_I2C1_SCL_LOAD_BITS_SHIFT));
-		break;
-	case 2:
-		/* Setup PULL-UP resistor for I2C-2 */
-		val &= ~(OMAP4_I2C2_SDA_LOAD_BITS_MASK  |
-			 OMAP4_I2C2_SCL_LOAD_BITS_MASK  |
-			 OMAP4_I2C2_SDA_PULLUPRESX_MASK |
-			 OMAP4_I2C2_SCL_PULLUPRESX_MASK);
-		val |= ((pullup << OMAP4_I2C2_SDA_LOAD_BITS_SHIFT) |
-			(pullup << OMAP4_I2C2_SCL_LOAD_BITS_SHIFT));
-		break;
-	case 3:
-		/* Setup PULL-UP resistor for I2C-3 */
-		val &= ~(OMAP4_I2C3_SDA_LOAD_BITS_MASK  |
-			 OMAP4_I2C3_SCL_LOAD_BITS_MASK  |
-			 OMAP4_I2C3_SDA_PULLUPRESX_MASK |
-			 OMAP4_I2C3_SCL_PULLUPRESX_MASK);
-		val |= ((pullup << OMAP4_I2C3_SDA_LOAD_BITS_SHIFT) |
-			(pullup << OMAP4_I2C3_SCL_LOAD_BITS_SHIFT));
-		break;
-	case 4:
-		/* Setup PULL-UP resistor for I2C-4 */
-		val &= ~(OMAP4_I2C4_SDA_LOAD_BITS_MASK  |
-			 OMAP4_I2C4_SCL_LOAD_BITS_MASK  |
-			 OMAP4_I2C4_SDA_PULLUPRESX_MASK |
-			 OMAP4_I2C4_SCL_PULLUPRESX_MASK);
-		val |= ((pullup << OMAP4_I2C4_SDA_LOAD_BITS_SHIFT) |
-			(pullup << OMAP4_I2C4_SCL_LOAD_BITS_SHIFT));
-		break;
-	default:
-		pr_err("Pull-up resistors setup for %d I2C port is not implemented\n", bus_id);
-		return;
-	}
-
-	omap4_ctrl_pad_writel(val, OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_I2C_0);
-}
 
 /**
  * omap_register_i2c_bus - register I2C bus with device descriptors

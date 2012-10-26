@@ -227,10 +227,6 @@ struct mmc_host {
 	struct led_trigger	*led;		/* activity led */
 #endif
 
-#ifdef CONFIG_REGULATOR
-	bool			regulator_enabled; /* regulator state */
-#endif
-
 	struct dentry		*debugfs_root;
 
 #ifdef CONFIG_TIWLAN_SDIO
@@ -293,6 +289,8 @@ extern int mmc_power_restore_host(struct mmc_host *host);
 extern void mmc_detect_change(struct mmc_host *, unsigned long delay);
 extern void mmc_request_done(struct mmc_host *, struct mmc_request *);
 
+extern void mmc_flush_scheduled_work(void);
+
 static inline void mmc_signal_sdio_irq(struct mmc_host *host)
 {
 	host->ops->enable_sdio_irq(host, 0);
@@ -301,24 +299,8 @@ static inline void mmc_signal_sdio_irq(struct mmc_host *host)
 
 struct regulator;
 
-#ifdef CONFIG_REGULATOR
 int mmc_regulator_get_ocrmask(struct regulator *supply);
-int mmc_regulator_set_ocr(struct mmc_host *mmc,
-			struct regulator *supply,
-			unsigned short vdd_bit);
-#else
-static inline int mmc_regulator_get_ocrmask(struct regulator *supply)
-{
-	return 0;
-}
-
-static inline int mmc_regulator_set_ocr(struct mmc_host *mmc,
-				 struct regulator *supply,
-				 unsigned short vdd_bit)
-{
-	return 0;
-}
-#endif
+int mmc_regulator_set_ocr(struct regulator *supply, unsigned short vdd_bit);
 
 int mmc_card_awake(struct mmc_host *host);
 int mmc_card_sleep(struct mmc_host *host);
@@ -343,14 +325,10 @@ static inline int mmc_card_is_removable(struct mmc_host *host)
 	return !(host->caps & MMC_CAP_NONREMOVABLE) && mmc_assume_removable;
 }
 
-static inline int mmc_card_keep_power(struct mmc_host *host)
+static inline int mmc_card_is_powered_resumed(struct mmc_host *host)
 {
 	return host->pm_flags & MMC_PM_KEEP_POWER;
 }
 
-static inline int mmc_card_wake_sdio_irq(struct mmc_host *host)
-{
-	return host->pm_flags & MMC_PM_WAKE_SDIO_IRQ;
-}
 #endif
 

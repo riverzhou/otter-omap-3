@@ -32,7 +32,6 @@
 #define CPU0_TWD_OFFSET			0xd30
 #define CPU1_TWD_OFFSET			0xd38
 #define OMAP_TYPE_OFFSET		0xd48
-#define L2X0_LOCKDOWN_OFFSET0		0xd50
 
 /*
  * Secure low power context save/restore API index
@@ -48,6 +47,7 @@
 #define PPA_SERVICE_PL310_POR		0x23
 #define PPA_SERVICE_NS_SMP		0x25
 
+#define PL310_POR			5
 /*
  * Secure HAL API flags
  */
@@ -67,23 +67,8 @@
 #define OMAP4_USBHOST_CLKSEL_UTMI_P2_EXT_P1_EXT		0x3
 
 /* L2 controller AUXCTRL value */
-#define OMAP443X_L2X0_AUXCTL_VALUE_ES1			0x0e050000
-#define OMAP443X_L2X0_AUXCTL_VALUE			0x1e470000
-#define OMAP446X_L2X0_AUXCTL_VALUE			0x5e470000
-#define OMAP446X_L2X0_AUXCTL_VALUE_ES1			0x4e470000
-
-/* POR register settings */
-#define OMAP443X_PL310_POR				5
-/*
- *  FIXME : The L2 prefetch hints seems to break MPU OSWR. Remove them
- * for time being.
- */
-#define OMAP446X_PL310_POR_ES1				0x00000007
-#define OMAP446X_PL310_POR				0x10000007
-
-/* L2 controller Data RAM latency */
-#define OMAP443X_PL310_D_RAM_LAT			0x00000111
-#define OMAP446X_PL310_D_RAM_LAT			0x00000110
+#define OMAP4_L2X0_AUXCTL_VALUE_ES1			0x0e050000
+#define OMAP4_L2X0_AUXCTL_VALUE				0x1e470000
 
 #define A9_ES1_REV					0x410FC091
 
@@ -109,12 +94,10 @@ extern void __iomem *sar_ram_base;
 extern dma_addr_t omap4_secure_ram_phys;
 extern void *so_ram_address;
 
-extern bool in_dpll_cascading;
-extern bool abe_can_enter_dpll_cascading;
-extern rwlock_t dpll_cascading_lock;
+extern bool omap4_lpmode;
 
 extern void __init gic_init_irq(void);
-extern void omap_smc1(u32 fn, u32 r0, u32 r1);
+extern void omap_smc1(u32 fn, u32 arg);
 extern u32 omap_smc2(u32 id, u32 falg, u32 pargs);
 extern u32 omap4_secure_dispatcher(u32 idx, u32 flag, u32 nargs,
 				u32 arg1, u32 arg2, u32 arg3, u32 arg4);
@@ -123,8 +106,6 @@ extern void omap4_enter_lowpower(unsigned int cpu, unsigned int power_state);
 extern void __omap4_cpu_suspend(unsigned int cpu, unsigned int save_state);
 extern unsigned long *omap4_cpu_wakeup_addr(void);
 extern int omap4_set_freq_update(void);
-extern int dpll_cascading_blocker_hold(struct device *dev);
-extern int dpll_cascading_blocker_release(struct device *dev);
 extern int omap4_dpll_low_power_cascade_check_entry(void);
 extern int omap4_dpll_low_power_cascade_enter(void);
 extern int omap4_dpll_low_power_cascade_exit(void);
@@ -132,7 +113,7 @@ extern int omap4_dpll_low_power_cascade_exit(void);
 extern void DO_WFI(void);
 
 #ifdef CONFIG_PM
-extern int omap4_sar_save(void);
+extern void omap4_sar_save(void);
 extern void omap4_sar_overwrite(void);
 extern void omap4_sar_usbhost_init(u32 fck_source);
 #else

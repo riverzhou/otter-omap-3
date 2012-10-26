@@ -59,7 +59,7 @@
 #define _ABE_DEFINE_H_
 #define ATC_DESCRIPTOR_NUMBER                               64
 #define PROCESSING_SLOTS                                    25
-#define TASK_POOL_LENGTH                                    150
+#define TASK_POOL_LENGTH                                    136
 #define MCU_IRQ                                            0x24
 #define MCU_IRQ_SHIFT2                                     0x90
 #define DMA_REQ_SHIFT2                                     0x210
@@ -87,25 +87,11 @@
 #define VIBRA1_IIR_MEMSIZE                                  11
 #define SAMP_LOOP_96K                                       24
 #define SAMP_LOOP_48K                                       12
-#define SAMP_LOOP_48KM1                                     11
-#define SAMP_LOOP_48KM2                                     10
 #define SAMP_LOOP_16K                                       4
 #define SAMP_LOOP_8K                                        2
-#define INPUT_SCALE_SHIFTM2                                 5156
-#define SATURATION                                          8420
-#define SATURATION_7FFF                                     8416
-#define OUTPUT_SCALE_SHIFTM2                                5160
-#define NTAPS_SRC_44P1                                      24
-#define NTAPS_SRC_44P1_M4                                   96
-#define NTAPS_SRC_44P1_THR                                  60
-#define NTAPS_SRC_44P1_THRM4                                240
-#define DRIFT_COUNTER_44P1M1                                443
-#define NB_OF_PHASES_SRC44P1                                12
-#define NB_OF_PHASES_SRC44P1M1                              11
-#define SRC44P1_BUFFER_SIZE                                 96
-#define SRC44P1_BUFFER_SIZE_M4                              384
-#define SRC44P1_INIT_RPTR                                   60
-#define MUTE_SCALING                                        5164
+#define INPUT_SCALE_SHIFTM2                                 5100
+#define OUTPUT_SCALE_SHIFTM2                                5104
+#define MUTE_SCALING                                        5108
 #define ABE_PMEM                                            1
 #define ABE_CMEM                                            2
 #define ABE_SMEM                                            3
@@ -113,8 +99,4 @@
 #define ABE_ATC                                             5
 #define ASRC_BT_UL_FIR_L                                    19
 #define ASRC_BT_DL_FIR_L                                    19
-#define SRC44P1_COEF_ADDR                                   1466
-#define NTAPS_P_SRC_44P1_M4                                 192
-#define MAX_SMEM_CHECK                                      32
-#define SATURATION_EQ                                       9780
 #endif /* _ABE_DEFINE_H_ */

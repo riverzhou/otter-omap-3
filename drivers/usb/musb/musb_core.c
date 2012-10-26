@@ -571,16 +571,11 @@ static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb,
 		 *  - ... to A_WAIT_BCON.
 		 * a_wait_vrise_tmout triggers VBUS_ERROR transitions
 		 */
-		if ((devctl & MUSB_DEVCTL_VBUS)
-				&& !(devctl & MUSB_DEVCTL_BDEVICE)) {
-			musb_writeb(mbase, MUSB_DEVCTL, MUSB_DEVCTL_SESSION);
-			musb->ep0_stage = MUSB_EP0_START;
-			musb->xceiv->state = OTG_STATE_A_IDLE;
-			MUSB_HST_MODE(musb);
-			musb_set_vbus(musb, 1);
-		} else {
-			DBG(5, "discarding SESSREQ INT\n");
-		}
+		musb_writeb(mbase, MUSB_DEVCTL, MUSB_DEVCTL_SESSION);
+		musb->ep0_stage = MUSB_EP0_START;
+		musb->xceiv->state = OTG_STATE_A_IDLE;
+		MUSB_HST_MODE(musb);
+		musb_set_vbus(musb, 1);
 
 		handled = IRQ_HANDLED;
 	}
@@ -737,7 +732,7 @@ static irqreturn_t musb_stage0_irq(struct musb *musb, u8 int_usb,
 		musb->xceiv->event = USB_EVENT_ID;
 
 		/* Hold a wakelock */
-		wake_lock(&plat->musb_lock);
+		//wake_lock(&plat->musb_lock);
 
 #ifdef CONFIG_USB_MUSB_OTG
 		/* flush endpoints when transitioning from Device Mode */
@@ -807,7 +802,7 @@ b_host:
 		musb->xceiv->event = USB_EVENT_NONE;
 
 		/* Release the wakelock */
-		wake_unlock(&plat->musb_lock);
+		//wake_unlock(&plat->musb_lock);
 
 		switch (musb->xceiv->state) {
 #ifdef CONFIG_USB_MUSB_HDRC_HCD
@@ -878,7 +873,7 @@ b_host:
 			musb->xceiv->event = USB_EVENT_VBUS;
 
 			/* Hold a wakelock */
-			wake_lock(&plat->musb_lock);
+			//wake_lock(&plat->musb_lock);
 
 			switch (musb->xceiv->state) {
 #ifdef CONFIG_USB_OTG

@@ -1,10 +1,11 @@
 # =====================================================================
-# L27.G.0 OMAP4460 Gingerbread Release
+# L27.13.1-Beta Gingerbread 2.3.3 Hand-off
 # =====================================================================
  
 Author: Leed Aguilar
-Date: May 16th 2011
-Target Release: L27.G.0
+Date: May 23th 2011
+Target Release: L27.13.1 Beta
+Destination: rel_l27x_handoff@list.ti.com
  
 # =====================================================================
 # Configuration Settings
@@ -12,25 +13,27 @@ Target Release: L27.G.0
  
 [KERNEL]
 Repo   : git://git.omapzoom.org/kernel/omap.git
-Tag    : android-2.6.35-2.3-L27.G.0
+Branch : p-android-omap-2.6.35
+Tag    : android-2.6.35-2.3-omap4.13.1-Beta
 Config : android_4430_defconfig
  
 [U-BOOT]
 Repo   : git://git.omapzoom.org/repo/u-boot.git
 Branch : omap4_dev
-Tag:   : L27.G.0
+Tag:   : L27.13.1-Beta
 Commit : 601ff71c8d46b5e90e13613974a16d10f2006bb3
 Config : omap4430sdp_config
  
 [X-LOADER]
 Repo   : git://git.omapzoom.org/repo/x-loader.git
-Branch : omap4460_wip
-Tag:   : L27.G.0
-Commit : ecf6054fee7c7f4662cb5e6cde6d383313bf6aca
-Config : omap4460sdp_config
+Branch : omap4_dev
+Tag:   : L27.13.1-Beta
+Commit : 1aee45bbcf4f94cd4558315f5a5464ae33ce84b4
+Config : omap4430sdp_config
  
 OS: Linux 2.6.35
-Platform: SDP OMAP4460 ES1.0 EMU
+Platform: SDP4430 OMAP4 ES2.2 EMU with ARM-A9-SMP@1Ghz
+          DDR@200Mhz, ES1.1 phoenix
 Toolchain: arm-none-linux-gnueabi-gcc (Sourcery G++ Lite 2010q1-202) 4.4.1
  
 # =====================================================================
@@ -40,7 +43,7 @@ Toolchain: arm-none-linux-gnueabi-gcc (Sourcery G++ Lite 2010q1-202) 4.4.1
 Kernel:
 -------
 1. git clone git://git.omapzoom.org/kernel/omap.git; cd omap/
-2. git checkout -b L27.G.0 android-2.6.35-2.3-L27.G.0
+2. git checkout -b L27.13.1-Beta android-2.6.35-2.3-omap4.13.1-Beta
 3. make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- android_4430_defconfig
 4. make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- uImage
 ** Output: uImage
@@ -48,7 +51,7 @@ Kernel:
 u-boot:
 -------
 1. git clone  git://git.omapzoom.org/repo/u-boot.git; cd u-boot/
-2. git checkout -b L27.G.0 601ff71c8d46b5e90e13613974a16d10f2006bb3
+2. git checkout -b L27.13.1-Beta 601ff71c8d46b5e90e13613974a16d10f2006bb3
 3. make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- omap4430sdp_config
 4. make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi-
 ** Output: u-boot.bin
@@ -56,10 +59,9 @@ u-boot:
 x-loader:
 ---------
 1. git clone git://git.omapzoom.org/repo/x-loader.git; cd x-loader/
-2. git checkout -b L27.G.0 ecf6054fee7c7f4662cb5e6cde6d383313bf6aca
-3. make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- omap4460sdp_config
+2. git checkout -b L27.13.1-Beta 1aee45bbcf4f94cd4558315f5a5464ae33ce84b4
+3. make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- omap4430sdp_config
 4. make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi- ift
-** Output: x-load.bin
  
 # =====================================================================
 # Important Notes
@@ -68,7 +70,7 @@ x-loader:
 Install: Sourcery G++ Lite 2010q1-202 for ARM GNU/Linux
 http://www.codesourcery.com/sgpp/lite/arm/portal/release1293
  
-* This Release is intended to be used for Android Gingerbread 2.3.4
+* This Release is intended to be used for Android Gingerbread 2.3.3
  
 How obtain the Android source code:
  
@@ -76,30 +78,29 @@ $ repo init -u git://git.omapzoom.org/platform/omapmanifest.git -b gingerbread
 $ repo sync
 $ cp device/ti/blaze/buildspec.mk.default buildspec.mk
 $ make -j2
+Output:
+See filesystem in:
+    out/target/product/blaze/...
+        * root/
+        * system/
  
 For more information on how to compile the Android Filesystem visit:
 http://omappedia.org/wiki/Android_Getting_Started#Building_Android
  
-Baseport: OS boot, SMP Kernel, GP Timer, RTC, HiRes Timer, SDMA, GPIO, LED,
-Watchdog, I2C, UART, Ethernet, Keypad, touchscreen, MMC/SD/SDIO, McSPI,
-McBSP, Audio (ALSA driver with McBSP, McPDM support), V4L2 (video 1 path),
-V4L2 (DSI2) and HDMI, eMMC, Battery Management, USB OTG Client, Secure Boot,
-Signing tools, HSIe, USB Host (EHCI and OHCI), Pressure Sensor, Ambient Light Sensor,
-Highmem (1GB DDR) support, HDMI (packing), eMMC DDR mode, Digital Mic, TWL6030
-OMAP Temperature Sensor, Accelerometer sensor, Digital Compass, Framebuffer,
+[HIGHLIGHTS]
 
-Power Management: 
-
-- PM Framework (Clock, HWmod)
-- Driver adaptations
-- Smart Reflex Class-3
-- SRF
-- DVFS
-- CPU Freq
-- ABB, DDR
-- Thermal Adjusment
-- OSWR for CORE/MPU/L3/L4
-- OFF for all other domains
+- Add tps6130x regulator for TWL6040 VDDHF
+- OMAP4:NET:Add suspend/resume to eth
+- ABE HAL: Update to release 09.30
+- HDMI: several power management fixes 
+- OMAP4: Update the ES2.3 detection
+- OMAP: Allocate DMA-coherent memory space for SO write.
+- DPLL cascading mode fixes
+- OMAP4: Update hotplug governor policy
+- OMAP4: PM: Make EMIF interrupts wakeup capable
+- OMAP4:PM:IO optimization pafconf settings
+- General Power management and clock fixes
+- HSI General fixes
 
 [ADB over USB SUPPORT]
 
@@ -111,75 +112,51 @@ http://omappedia.com/wiki/Support_Tools#Android_Gadget_ADB:_Windows_PC_Host
 
 More info about ADB can be found here:
 http://omappedia.org/wiki/Support_Tools
->>>>>>> p-android-omap-2.6.35-tablet
-
 
 # =====================================================================
-# Known issues
+# Defects opened
 # =====================================================================
- 
-1) random crashes with active use case and suspend/resume
-2) Kernel panic in McSPI and McBSP transfers scenarios
-3) voltage ramp to 0 volts is not working, so Device-OFF won't increase
-4) l2 cache is disabled  due to stability issues
-5) Off Mode in Idle Path not supported
-6) USB EHCI Hot Plug doesn't work
-7) Warm Reboot fail
-8) Board hangs while dpll_core_ck is trying to set 400M
+
+OMAPS00235918	SD-CARD is getting corrupted in log duration AV Record
+OMAPS00238376	Smart-Reflex input Clk is not re-configured upon DPLL ...
+
+# =====================================================================
+# Defects rejected/blocked
+# =====================================================================
+
+None
+
+# =====================================================================
+# Defects closed/resolved
+# =====================================================================
+
+OMAPS00236831	USB Certification: Back Voltage testing fails
+OMAPS00238138	Kernel Panic at at hdmi_disable_video during device ...
+OMAPS00238053	Detect dedicated charger on OMAP4
+OMAPS00232725	PT Robustness SMC:4 SMC Stability  tests do not run ...
+OMAPS00238081	Blaze fails Mass Storage Class (MSC) Certification Test
+OMAPS00237871	USB Interoperability Testing fail - File transfer ...
+OMAPS00236551	USB devices attached to USB hub attached to OTG port ...
+OMAPS00236959	[Cosmo PM] Alarm RTC Wake up Random Fail .
+OMAPS00236958	[Cosmo PM] System Does not go to OFF Mode during ...
+OMAPS00234955	PT: MODEM : Display turns off unexpectedly during ...
+OMAPS00232172	PT:PPM: OFF Mode power consumption does not meet ...
+OMAPS00238446	L27.12.1-P2: Time is not saved when device goes into ...
+OMAPS00239106	USB Certification: USBCV Mass Storage Class (MSC) ...
+OMAPS00236410	Blaze Wired Ethernet remains ON during OFF mode ...
+OMAPS00238332	[TI_SW][Defect][TOTORO_BSP][UART] - Serial connection ...
+OMAPS00236832	[APPS] MP3 audio quality degraded when in DPLL ...
+OMAPS00239657	[APPS]: TWL6030: Return correct regulator state for ...
+OMAPS00239627	"T1_BSP : [USB] Device does not enter ""Suspend"" ...
+OMAPS00239500	[SHAD_BSP] Duration of mdelay and udelay depends on ...
 
 # =====================================================================
 # Kernel Changelist
 # =====================================================================
- 
-Kernel baseline (L27.13.1 dirty version = p-android-omap-2.6.35 @ 0a6abec)
 
-OMAP4460 support:
+Kernel stats from previous L27.13.1 HO: 136 new patches introduced
 
-OMAP4: TEMP SENSOR: Add sysfs entries for setting TSHUT thresholds
-OMAP4: TEMP SENSOR: BUGFIX: Avoid NULL pointer derefernce
-OMAP4:PM:446x keep volt off disabled by default
-OMAP4:PM:446x MPU power domain update fields
-OMAP4: TEMP SENSOR: Use correct register names in restore context
-OMAP4: TEMP SENSOR: Fix pointer passing for suspend/resume/sysfs
-OMAP4:PM:Guard cpu1 boot before cpu0 by ifdef CONFIG_L2X0
-OMAP4:ARM:Correcting Mpu Freq rate for 4460
-OMAP4 PM: Set voltage ramp time for TPS62361
-OMAP PM: Enable OPP dynamically
-omap4: macros for CPU frequency capabilities
-PM:CPUFREQ: NULL pointer check before calling policy gov specific boost api
-OMAP4:PM:Update 1.2G/1.35G volt settings
-OMAP4:ARM:HACK:OMAPS00238833:Disable L2X0 by default
-OMAP4:PM:Update volt sequence for 446x to be stable
-OMAP4:HACK:OMAPS00238833:446x with L2 cache disabled
-OMAP4:DSS:Relax error logging to debug.
-OMAP4:PM:CPUIDLE disable while boot up V2
-OMAP4: TEMP SENSOR: BUG-Fix: Fix the sysfs set-thrshld routines
-OMAP4: TEMP SENSOR: Use IRQF_ONESHOT in the request_threaded_irq
-OMAP4: Add 1.2/1.5GHz support for 4460
-OMAP4: TEMP SENSOR: Change the driver name to be more specific
-OMAP4: Hwmod and Clk changes for Bandgap and temp sensor
-OMAP4: TEMP_SENSOR: Enable on-die temp sensor in defconfig
-OMAP4: TEMP_SENSOR: Tshut handling and untrimmed samples check
-OMAP4: Add on-die bandgap temp sensor for OMAP4460
-OMAP4: Add temperature sensor device file
-OMAP4: HWMOD: DO not reset GPIO1 during HWMOD init
-OMAP4: Update missing 4460 voltage table.
-OMAP4: CLOCKS: Change the USSB PHY clock nodes to CK_44XX
-OMAP4: clocks: Update the auxclks to use RATE_IN_44xx
-OMAP4: dpll: Control async bridge to ABE and L3/MA to EMIF
-OMAP4 PM: Add OMAP4460 OPPs
-OMAP4: TWL: Do not turn-off SYSEN for 4460
-[ARM] OMAP4: Defconfig: Enable TPS62361 in 4430 defconfig
-[ARM] OMAP4: PM: Add support for TPS62361 PMIC
-Correct the OMAP4460 rev id check
-OMAP4: ctrl: Update control module register defs
-OMAP4: dpll: Enable DCC for >1GHz MPU frequency
-OMAP4: clockdomain: Use CHIP_IS_44XX to reuse all CD's on 4460
-MAP4: powerdomain: Update MPU powerdomain for 4460
-OMAP4: clocks: Update the clock tree with 4460 clock nodes
-OMAP4: PRM: OMAP4460 specific PRM and CM register bitshifts
-omap4: make omap4430 hwmod data usable for omap4460
-omap4: implement rev id check for OMAP4460 ES1.0
+153 files changed, 9188 insertions(+), 3207 deletions(-)
 
 3fe202b OMAP4: clock: DPLL cascading cannot invoke CPUfreq
 fabdd9f OMAP4: fix warm reset via DPLL_ABE work around

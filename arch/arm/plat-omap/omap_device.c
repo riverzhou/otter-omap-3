@@ -115,12 +115,11 @@
  * latency is greater than the requested maximum wakeup latency, step
  * backwards in the omap_device_pm_latency table to ensure the
  * device's maximum wakeup latency is less than or equal to the
- * requested maximum wakeup latency.  Returns ->activate_func() return value.
+ * requested maximum wakeup latency.  Returns 0.
  */
 static int _omap_device_activate(struct omap_device *od, u8 ignore_lat)
 {
 	struct timespec a, b, c;
-	int ret = 0;
 
 	pr_debug("omap_device: %s: activating\n", od->pdev.name);
 
@@ -139,7 +138,7 @@ static int _omap_device_activate(struct omap_device *od, u8 ignore_lat)
 		read_persistent_clock(&a);
 
 		/* XXX check return code */
-		ret = odpl->activate_func(od);
+		odpl->activate_func(od);
 
 		read_persistent_clock(&b);
 
@@ -170,7 +169,7 @@ static int _omap_device_activate(struct omap_device *od, u8 ignore_lat)
 		od->dev_wakeup_lat -= odpl->activate_lat;
 	}
 
-	return ret;
+	return 0;
 }
 
 /**
@@ -190,7 +189,6 @@ static int _omap_device_activate(struct omap_device *od, u8 ignore_lat)
 static int _omap_device_deactivate(struct omap_device *od, u8 ignore_lat)
 {
 	struct timespec a, b, c;
-	int ret = 0;
 
 	pr_debug("omap_device: %s: deactivating\n", od->pdev.name);
 
@@ -208,7 +206,7 @@ static int _omap_device_deactivate(struct omap_device *od, u8 ignore_lat)
 		read_persistent_clock(&a);
 
 		/* XXX check return code */
-		ret = odpl->deactivate_func(od);
+		odpl->deactivate_func(od);
 
 		read_persistent_clock(&b);
 
@@ -242,7 +240,7 @@ static int _omap_device_deactivate(struct omap_device *od, u8 ignore_lat)
 		od->pm_lat_level++;
 	}
 
-	return ret;
+	return 0;
 }
 
 static inline struct omap_device *_find_by_pdev(struct platform_device *pdev)
@@ -882,28 +880,20 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 			unsigned long rate)
 {
 	struct omap_opp *opp;
-	unsigned long volt, freq, min_freq, max_freq, flags;
+	unsigned long volt, freq, min_freq, max_freq;
 	struct voltagedomain *voltdm;
 	struct platform_device *pdev;
 	struct omap_device *od;
 	int ret;
 
-	if (WARN_ON(req_dev == NULL || dev == NULL))
-		return -EFAULT;
-
 	pdev = container_of(dev, struct platform_device, dev);
 	od = _find_by_pdev(pdev);
-	flags = 0;
 
+#ifdef CONFIG_ARCH_OMAP4
 	/* if in low power DPLL cascading mode, bail out early */
-	if (cpu_is_omap44xx()) {
-		read_lock_irqsave(&dpll_cascading_lock, flags);
-
-		if (in_dpll_cascading) {
-			ret = -EINVAL;
-			goto out;
-		}
-	}
+	if (omap4_lpmode)
+		return -EINVAL;
+#endif
 
 	/*
 	 * Figure out if the desired frquency lies between the
@@ -912,15 +902,13 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	min_freq = 0;
 	if (IS_ERR(opp_find_freq_ceil(dev, &min_freq))) {
 		dev_err(dev, "%s: Unable to find lowest opp\n", __func__);
-		ret = -ENODEV;
-		goto out;
+		return -ENODEV;
 	}
 
 	max_freq = ULONG_MAX;
 	if (IS_ERR(opp_find_freq_floor(dev, &max_freq))) {
 		dev_err(dev, "%s: Unable to find highest opp\n", __func__);
-		ret = -ENODEV;
-		goto out;
+		return -ENODEV;
 	}
 
 	if (rate < min_freq)
@@ -935,8 +923,7 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	if (IS_ERR(opp)) {
 		dev_dbg(dev, "%s: Unable to find OPP for freq%ld\n",
 			__func__, rate);
-		ret = -ENODEV;
-		goto out;
+		return -ENODEV;
 	}
 	if (unlikely(freq != rate))
 		dev_dbg(dev, "%s: Available freq %ld != dpll freq %ld.\n",
@@ -954,16 +941,11 @@ int omap_device_set_rate(struct device *req_dev, struct device *dev,
 	if (ret) {
 		dev_err(dev, "%s: Unable to get the final volt for scaling\n",
 			__func__);
-		goto out;
+		return ret;
 	}
 
 	/* Do the actual scaling */
-	ret =  omap_voltage_scale(voltdm);
-out:
-	if (cpu_is_omap44xx())
-		read_unlock_irqrestore(&dpll_cascading_lock, flags);
-
-	return ret;
+	return omap_voltage_scale(voltdm);
 }
 EXPORT_SYMBOL(omap_device_set_rate);
 

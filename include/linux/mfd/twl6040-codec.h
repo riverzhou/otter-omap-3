@@ -72,11 +72,6 @@
 #define TWL6040_VIOREGNUM		18
 #define TWL6040_VDDREGNUM		21
 
-/* ASICREV (0x01) value */
-#define TWL6040_REV_1_0			0x00
-#define TWL6040_REV_1_1			0x01
-#define TWL6040_REV_1_3			0x02
-
 /* INTID (0x03) fields */
 
 #define TWL6040_THINT			0x01
@@ -132,37 +127,24 @@
 
 /* HSLCTL (0x10) fields */
 
-#define TWL6040_HSDACENAL		0x01
 #define TWL6040_HSDACMODEL		0x02
 #define TWL6040_HSDRVMODEL		0x08
 
 /* HSRCTL (0x11) fields */
 
-#define TWL6040_HSDACENAR		0x01
 #define TWL6040_HSDACMODER		0x02
 #define TWL6040_HSDRVMODER		0x08
-
-/* HFLCTL (0x14) fields */
-
-#define TWL6040_HFDACENAL		0x01
-
-/* HFRCTL (0x16) fields */
-
-#define TWL6040_HFDACENAR		0x01
-
 
 /* VIBCTLL (0x18) fields */
 
 #define TWL6040_VIBCTRLLN		0x10
-#define TWL6040_VIBCTRLLP		0x08
-#define TWL6040_VIBCTRLL		0x04
+#define TWL6040_VIBCTRLLP		0x04
 #define TWL6040_VIBENAL			0x01
 
 /* VIBCTLL (0x19) fields */
 
 #define TWL6040_VIBCTRLRN		0x10
-#define TWL6040_VIBCTRLRP		0x08
-#define TWL6040_VIBCTRLR		0x04
+#define TWL6040_VIBCTRLRP		0x04
 #define TWL6040_VIBENAR			0x01
 
 /* GPOCTL (0x1E) fields */
@@ -182,8 +164,6 @@
 /* STATUS (0x2E) fields */
 
 #define TWL6040_PLUGCOMP		0x02
-#define TWL6040_VIBLOCDET		0x10
-#define TWL6040_VIBROCDET		0x20
 
 #define TWL6040_CODEC_CELLS		2
 
@@ -214,7 +194,6 @@ struct twl6040_codec {
 
 	enum twl6040_pll_id pll;
 	unsigned int sysclk;
-	int icrev;
 
 	unsigned int irq;
 	unsigned int irq_base;
@@ -257,7 +236,6 @@ int twl6040_set_pll(struct twl6040_codec *twl6040, enum twl6040_pll_id id,
 		    unsigned int freq_in, unsigned int freq_out);
 enum twl6040_pll_id twl6040_get_pll(struct twl6040_codec *twl6040);
 unsigned int twl6040_get_sysclk(struct twl6040_codec *twl6040);
-int twl6040_get_icrev(struct twl6040_codec *twl6040);
 int twl6040_irq_init(struct twl6040_codec *twl6040);
 void twl6040_irq_exit(struct twl6040_codec *twl6040);
 

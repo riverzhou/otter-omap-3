@@ -153,7 +153,7 @@ static IMG_VOID SGXResetSleep(PVRSRV_SGXDEV_INFO	*psDevInfo,
 							  IMG_UINT32			ui32PDUMPFlags,
 							  IMG_BOOL				bPDump)
 {
-#if defined(PDUMP) || defined(EMULATOR)
+#if defined(PDUMP)
 	IMG_UINT32	ui32ReadRegister;
 
 	#if defined(SGX_FEATURE_MP)
@@ -178,11 +178,6 @@ static IMG_VOID SGXResetSleep(PVRSRV_SGXDEV_INFO	*psDevInfo,
 #endif
 	}
 
-#if defined(EMULATOR)
-
-
-	OSReadHWReg(psDevInfo->pvRegsBaseKM, ui32ReadRegister);
-#endif
 }
 
 
@@ -405,10 +400,6 @@ IMG_VOID SGXReset(PVRSRV_SGXDEV_INFO	*psDevInfo,
 			
 			ui32RegVal = MNE_CR_CTRL_BYP_CC_MASK;
 		#endif
-		#if defined(FIX_HW_BRN_34028)
-
-			ui32RegVal |= (8 << MNE_CR_CTRL_BYPASS_SHIFT);
-		#endif
 	#endif 
 	OSWriteHWReg(psDevInfo->pvRegsBaseKM, MNE_CR_CTRL, ui32RegVal);
 	PDUMPREG(SGX_PDUMPREG_NAME, MNE_CR_CTRL, ui32RegVal);
@@ -617,8 +608,8 @@ IMG_VOID SGXReset(PVRSRV_SGXDEV_INFO	*psDevInfo,
 
 	PDUMPCOMMENTWITHFLAGS(ui32PDUMPFlags, "Initialise the slave BIFs\r\n");
 
-#if defined(FIX_HW_BRN_31278) || defined(FIX_HW_BRN_31620) || defined(FIX_HW_BRN_31671) || defined(FIX_HW_BRN_32085)
-	#if defined(FIX_HW_BRN_31278) || defined(FIX_HW_BRN_32085)
+#if defined(FIX_HW_BRN_31278) || defined(FIX_HW_BRN_31620) || defined(FIX_HW_BRN_31671)
+	#if defined(FIX_HW_BRN_31278)
 	
 	ui32RegVal = (1<<EUR_CR_MASTER_BIF_MMU_CTRL_ADDR_HASH_MODE_SHIFT);
 	#else
@@ -633,7 +624,7 @@ IMG_VOID SGXReset(PVRSRV_SGXDEV_INFO	*psDevInfo,
 	OSWriteHWReg(psDevInfo->pvRegsBaseKM, EUR_CR_MASTER_BIF_MMU_CTRL, ui32RegVal);
 	PDUMPREGWITHFLAGS(SGX_PDUMPREG_NAME, EUR_CR_MASTER_BIF_MMU_CTRL, ui32RegVal, ui32PDUMPFlags);
 
-	#if defined(FIX_HW_BRN_31278) || defined(FIX_HW_BRN_32085)
+	#if defined(FIX_HW_BRN_31278)
 	
 	ui32RegVal = (1<<EUR_CR_BIF_MMU_CTRL_ADDR_HASH_MODE_SHIFT);
 	#else

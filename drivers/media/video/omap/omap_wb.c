@@ -166,7 +166,7 @@ int omap_wb_try_format(enum omap_color_mode *color_mode,
 		bpp = RGB24_BPP;
 		break;
 	case V4L2_PIX_FMT_BGR32:
-		*color_mode = OMAP_DSS_COLOR_RGBX24;
+		*color_mode = OMAP_DSS_COLOR_RGBX32;
 		bpp = RGB32_BPP;
 	case V4L2_PIX_FMT_YUYV:
 		*color_mode = OMAP_DSS_COLOR_YUV2;
@@ -765,7 +765,7 @@ static int omap_wb_buffer_prepare(struct videobuf_queue *q,
 
 	/* Here, we need to use the physical addresses given by Tiler:
 	*/
-	wb->queued_buf_addr[vb->i] = (u8 *) wb->buf_phy_addr[vb->i];
+	wb->queued_buf_addr[vb->i] = (u8 *) wb->buf_phy_addr[vb->i]; 
 	wb->queued_buf_uv_addr[vb->i] = (u8 *) wb->buf_phy_uv_addr[vb->i];
 	return 0;
 }
@@ -995,7 +995,7 @@ static int omap_wb_open(struct file *file)
 
 	videobuf_queue_dma_contig_init(q, &video_vbq_ops, q->dev, &wb->vbq_lock,
 			       wb->type, V4L2_FIELD_NONE, sizeof(struct videobuf_buffer),
-				wb);
+				wb);	
 	v4l2_dbg(1, debug_wb, &wb->wb_dev->v4l2_dev, "Exiting %s\n", __func__);
 	return 0;
 }

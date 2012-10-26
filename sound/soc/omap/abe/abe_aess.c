@@ -174,8 +174,6 @@ EXPORT_SYMBOL(abe_stop_event_generator);
  */
 void abe_hw_configuration()
 {
-	/* enables the DMAreq from AESS AESS_AUTO_GATING = 1 */
-	omap_abe_reg_writel(abe, OMAP_ABE_AESS_OFFSET + 0x7C, 1);
 	/* enables the DMAreq from AESS AESS_DMAENABLE_SET = 255 */
 	omap_abe_reg_writel(abe, OMAP_ABE_AESS_OFFSET + 0x60, 0xFF);
 	/* enables the MCU IRQ from AESS to Cortex A9 */

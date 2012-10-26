@@ -32,7 +32,6 @@
 void __iomem *sar_ram_base;
 static void __iomem *omap4_sar_modules[MAX_SAR_MODULES];
 static struct powerdomain *l3init_pwrdm;
-static struct clockdomain *l3init_clkdm;
 static struct clk *usb_host_ck, *usb_tll_ck;
 
 /*
@@ -80,36 +79,9 @@ static void save_sar_bank3(void)
 	l4_secure_clkdm = clkdm_lookup("l4_secure_clkdm");
 	omap2_clkdm_wakeup(l4_secure_clkdm);
 
-	if (cpu_is_omap446x())
-		sar_save(OMAP446X_NB_REGS_CONST_SETS_RAM3_HW, SAR_BANK3_OFFSET, omap446x_sar_ram3_layout);
-	else
-		sar_save(NB_REGS_CONST_SETS_RAM3_HW, SAR_BANK3_OFFSET, sar_ram3_layout);
-
+	sar_save(NB_REGS_CONST_SETS_RAM3_HW, SAR_BANK3_OFFSET, sar_ram3_layout);
 
 	omap2_clkdm_allow_idle(l4_secure_clkdm);
-}
-
-static int omap4_sar_not_accessible(void)
-{
-	u32 usbhost_state, usbtll_state;
-
-	/*
-	 * Make sure that USB host and TLL modules are not
-	 * enabled before attempting to save the context
-	 * registers, otherwise this will trigger an exception.
-	 */
-	usbhost_state = cm_read_mod_reg(OMAP4430_CM2_L3INIT_MOD,
-		OMAP4_CM_L3INIT_USB_HOST_CLKCTRL_OFFSET)
-		& (OMAP4430_STBYST_MASK | OMAP4430_IDLEST_MASK);
-	usbtll_state = cm_read_mod_reg(OMAP4430_CM2_L3INIT_MOD,
-		OMAP4_CM_L3INIT_USB_TLL_CLKCTRL_OFFSET)
-		& OMAP4430_IDLEST_MASK;
-
-	if ((usbhost_state == (OMAP4430_STBYST_MASK | OMAP4430_IDLEST_MASK)) &&
-		(usbtll_state == (OMAP4430_IDLEST_MASK)))
-		return 0;
-	else
-		return -EBUSY;
 }
 
  /*
@@ -117,50 +89,33 @@ static int omap4_sar_not_accessible(void)
   * Save the context to SAR_RAM1 and SAR_RAM2 as per
   * sar_ram1_layout and sar_ram2_layout for the device OFF mode
   */
-int omap4_sar_save(void)
+void omap4_sar_save(void)
 {
 	/*
 	 * Not supported on ES1.0 silicon
 	 */
 	if (omap_rev() == OMAP4430_REV_ES1_0) {
 		WARN_ONCE(1, "omap4: SAR backup not supported on ES1.0 ..\n");
-		return 0;
-	}
-
-	if (omap4_sar_not_accessible()) {
-		pr_debug("%s: USB SAR CNTX registers are not accessible!\n",
-			__func__);
-		return -EBUSY;
+		return;
 	}
 
 	/*
 	 * SAR bits and clocks needs to be enabled
 	 */
-	omap2_clkdm_wakeup(l3init_clkdm);
 	pwrdm_enable_hdwr_sar(l3init_pwrdm);
 	clk_enable(usb_host_ck);
 	clk_enable(usb_tll_ck);
 
 	/* Save SAR BANK1 */
-	if (cpu_is_omap446x())
-		sar_save(OMAP446X_NB_REGS_CONST_SETS_RAM1_HW, SAR_BANK1_OFFSET, omap446x_sar_ram1_layout);
-	else
-		sar_save(NB_REGS_CONST_SETS_RAM1_HW, SAR_BANK1_OFFSET, sar_ram1_layout);
+	sar_save(NB_REGS_CONST_SETS_RAM1_HW, SAR_BANK1_OFFSET, sar_ram1_layout);
 
+	pwrdm_disable_hdwr_sar(l3init_pwrdm);
 	clk_disable(usb_host_ck);
 	clk_disable(usb_tll_ck);
-	pwrdm_disable_hdwr_sar(l3init_pwrdm);
-	omap2_clkdm_allow_idle(l3init_clkdm);
 
 	/* Save SAR BANK2 */
-	if (cpu_is_omap446x())
-		sar_save(OMAP446X_NB_REGS_CONST_SETS_RAM2_HW, SAR_BANK2_OFFSET, omap446x_sar_ram2_layout);
-	else
-		sar_save(NB_REGS_CONST_SETS_RAM2_HW, SAR_BANK2_OFFSET, sar_ram2_layout);
-
-	return 0;
+	sar_save(NB_REGS_CONST_SETS_RAM2_HW, SAR_BANK2_OFFSET, sar_ram2_layout);
 }
-
 /**
  * omap4_sar_overwrite :
  * This API overwrite some of the SAR locations as a special cases
@@ -180,11 +135,7 @@ int omap4_sar_save(void)
 void omap4_sar_overwrite(void)
 {
 	u32 val = 0;
-	u32 offset = 0;
 
-
-	if (cpu_is_omap446x())
-		offset = 0x04;
 
 	/* Overwriting Phase1 data to be restored */
 	/* CM2 MEMIF_CLKTRCTRL = SW_WKUP, before FREQ UPDATE*/
@@ -206,25 +157,25 @@ void omap4_sar_overwrite(void)
 
 	/* Overwriting Phase2a data to be restored */
 	/* CM_L3INIT_USB_HOST_CLKCTRL: SAR_MODE = 1, MODULEMODE = 2 */
-	__raw_writel(0x00000012, sar_ram_base + SAR_BANK1_OFFSET + 0x2ec + offset);
+	__raw_writel(0x00000012, sar_ram_base + SAR_BANK1_OFFSET + 0x2ec);
 	/* CM_L3INIT_USB_TLL_CLKCTRL: SAR_MODE = 1, MODULEMODE = 1 */
-	__raw_writel(0x00000011, sar_ram_base + SAR_BANK1_OFFSET + 0x2f0 + offset);
+	__raw_writel(0x00000011, sar_ram_base + SAR_BANK1_OFFSET + 0x2f0);
 	/* CM2 CM_SDMA_STATICDEP : Enable static depedency for SAR modules */
-	__raw_writel(0x000090e8, sar_ram_base + SAR_BANK1_OFFSET + 0x2f4 + offset);
+	__raw_writel(0x000090e8, sar_ram_base + SAR_BANK1_OFFSET + 0x2f4);
 
 	/* Overwriting Phase2b data to be restored */
 	/* CM_L3INIT_USB_HOST_CLKCTRL: SAR_MODE = 0, MODULEMODE = 0 */
 	val = __raw_readl(OMAP4430_CM_L3INIT_USB_HOST_CLKCTRL);
 	val &= (OMAP4430_CLKSEL_UTMI_P1_MASK | OMAP4430_CLKSEL_UTMI_P2_MASK);
-	__raw_writel(val, sar_ram_base + SAR_BANK1_OFFSET + 0x91c + offset);
+	__raw_writel(val, sar_ram_base + SAR_BANK1_OFFSET + 0x91c);
 	/* CM_L3INIT_USB_TLL_CLKCTRL: SAR_MODE = 0, MODULEMODE = 0 */
-	__raw_writel(0x0000000, sar_ram_base + SAR_BANK1_OFFSET + 0x920 + offset);
+	__raw_writel(0x0000000, sar_ram_base + SAR_BANK1_OFFSET + 0x920);
 	/* CM2 CM_SDMA_STATICDEP : Clear the static depedency */
-	__raw_writel(0x00000040, sar_ram_base + SAR_BANK1_OFFSET + 0x924 + offset);
+	__raw_writel(0x00000040, sar_ram_base + SAR_BANK1_OFFSET + 0x924);
 
 	/* readback to ensure data reaches to SAR RAM */
 	barrier();
-	val = __raw_readl(sar_ram_base + SAR_BANK1_OFFSET + 0x924 + offset);
+	val = __raw_readl(sar_ram_base + SAR_BANK1_OFFSET + 0x924);
 }
 
 /*
@@ -287,7 +238,6 @@ static int __init omap4_sar_ram_init(void)
 	 * phase DMA takes an abort. Hence save these conents only once
 	 * in init to avoid the issue while waking up from device OFF
 	 */
-
 	if (omap_type() == OMAP2_DEVICE_TYPE_GP)
 		save_sar_bank3();
 	/*
@@ -295,16 +245,14 @@ static int __init omap4_sar_ram_init(void)
 	 * SECURE_EMIF1_SDRAM_CONFIG2_REG
 	 * SECURE_EMIF2_SDRAM_CONFIG2_REG
 	 */
-	if (!cpu_is_omap446x()) {
-		secure_ctrl_mod = ioremap(OMAP4_CTRL_MODULE_WKUP, SZ_4K);
-		BUG_ON(!secure_ctrl_mod);
-		__raw_writel(0x10,
+	secure_ctrl_mod = ioremap(OMAP4_CTRL_MODULE_WKUP, SZ_4K);
+	BUG_ON(!secure_ctrl_mod);
+	__raw_writel(0x10,
 		secure_ctrl_mod + OMAP4_CTRL_SECURE_EMIF1_SDRAM_CONFIG2_REG);
-		__raw_writel(0x10,
-		secure_ctrl_mod + OMAP4_CTRL_SECURE_EMIF2_SDRAM_CONFIG2_REG);
-		wmb();
-		iounmap(secure_ctrl_mod);
-	}
+	__raw_writel(0x10,
+	secure_ctrl_mod + OMAP4_CTRL_SECURE_EMIF2_SDRAM_CONFIG2_REG);
+	wmb();
+	iounmap(secure_ctrl_mod);
 
 	/*
 	 * L3INIT PD and clocks are needed for SAR save phase
@@ -312,10 +260,6 @@ static int __init omap4_sar_ram_init(void)
 	l3init_pwrdm = pwrdm_lookup("l3init_pwrdm");
 	if (!l3init_pwrdm)
 		pr_err("Failed to get l3init_pwrdm\n");
-
-	l3init_clkdm = clkdm_lookup("l3_init_clkdm");
-	if (!l3init_clkdm)
-		pr_err("Failed to get l3_init_clkdm\n");
 
 	usb_host_ck = clk_get(NULL, "usb_host_hs_fck");
 	if (!usb_host_ck)

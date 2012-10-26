@@ -160,6 +160,10 @@
 #define EHCI_PORTSC_0			0x54
 #define EHCI_PORTSC_CCS			0x1
 
+
+#define USBHS_IO_WAKEUPENABLE		(1 << 14)
+#define USBHS_IO_WKUPEVNT		(1 << 15)
+
 #define USBHS_IO_MODERESET		(~(0x7))
 #define USBHS_IO_CLKMODE		(0x4)
 #define USBHS_IO_SAFEMODE		(0x7)
@@ -281,10 +285,7 @@ static void setup_ehci_io_mux(const enum usbhs_omap3_port_mode *port_mode);
 static void setup_ohci_io_mux(const enum usbhs_omap3_port_mode *port_mode);
 static void setup_4430ehci_io_mux(const enum usbhs_omap3_port_mode *port_mode);
 static void setup_4430ohci_io_mux(const enum usbhs_omap3_port_mode *port_mode);
-static int usbhs_4430ehci_io_event(const enum usbhs_omap3_port_mode
-					*port_mode);
-static int usbhs_4430ohci_io_event(const enum usbhs_omap3_port_mode
-					*port_mode);
+
 
 /*-------------------------------------------------------------------------*/
 
@@ -398,154 +399,195 @@ static void usbhs_4430ehci_phy_mux(const enum usbhs_omap3_port_mode
 static void usbhs_4430ehci_io_enable(const enum usbhs_omap3_port_mode
 					*port_mode)
 {
+	u16 reg;
+
+	/*
+	 * FIXME: This funtion should use mux framework functions;
+	 * For now, we are hardcoding this.
+	 */
+
 	switch (port_mode[0]) {
 	case OMAP_EHCI_PORT_MODE_PHY:
-		omap_mux_enable_wakeup("usbb1_ulpiphy_dat0");
-		omap_mux_enable_wakeup("usbb1_ulpiphy_dir");
+
+		/* HUSB1_DATA0 */
+		reg = omap_readw(0x4A1000CA);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000CA);
+
+		/* HUSB1_DIR */
+		reg = omap_readw(0x4A1000C6);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000C6);
+
 		break;
 
 	case OMAP_EHCI_PORT_MODE_TLL:
-		omap_mux_enable_wakeup("usbb1_ulpitll_stp");
-		break;
+		/* TODO */
 
+
+		break;
 	case OMAP_USBHS_PORT_MODE_UNUSED:
+		/* FALLTHROUGH */
 	default:
 		break;
 	}
 
 	switch (port_mode[1]) {
 	case OMAP_EHCI_PORT_MODE_PHY:
-		omap_mux_enable_wakeup("usbb2_ulpiphy_dat0");
-		omap_mux_enable_wakeup("usbb2_ulpiphy_dir");
+
+		/* HUSB2_DATA0 */
+		reg = omap_readw(0x4A100168);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A100168);
+
 		break;
 
 	case OMAP_EHCI_PORT_MODE_TLL:
-		omap_mux_enable_wakeup("usbb2_ulpitll_stp");
-		break;
+		/* TODO */
 
+		break;
 	case OMAP_USBHS_PORT_MODE_UNUSED:
+		/* FALLTHROUGH */
 	default:
 		break;
 	}
+
+	return;
 }
+
+
 
 static void usbhs_4430ehci_io_disable(const enum usbhs_omap3_port_mode
 					*port_mode)
 {
+	u16 reg;
+
+	/*
+	 * FIXME: This funtion should use mux framework functions;
+	 * For now, we are hardcoding this.
+	 */
+
 	switch (port_mode[0]) {
 	case OMAP_EHCI_PORT_MODE_PHY:
-		omap_mux_disable_wakeup("usbb1_ulpiphy_dat0");
-		omap_mux_disable_wakeup("usbb1_ulpiphy_dir");
+
+		/* HUSB1_DATA0 */
+		reg = omap_readw(0x4A1000CA);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000CA);
+
+		/* HUSB1_DIR */
+		reg = omap_readw(0x4A1000C6);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000C6);
+
 		break;
+
 
 	case OMAP_EHCI_PORT_MODE_TLL:
-		omap_mux_disable_wakeup("usbb1_ulpitll_stp");
-		break;
+		/* TODO */
 
+		break;
 	case OMAP_USBHS_PORT_MODE_UNUSED:
+		/* FALLTHROUGH */
 	default:
 		break;
 	}
 
 	switch (port_mode[1]) {
 	case OMAP_EHCI_PORT_MODE_PHY:
-		omap_mux_disable_wakeup("usbb2_ulpiphy_dat0");
-		omap_mux_disable_wakeup("usbb2_ulpiphy_dir");
+
+		/* HUSB2_DATA0 */
+		reg = omap_readw(0x4A100168);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A100168);
+
 		break;
 
 	case OMAP_EHCI_PORT_MODE_TLL:
-		omap_mux_disable_wakeup("usbb2_ulpitll_stp");
-		break;
+		/* TODO */
 
+		break;
 	case OMAP_USBHS_PORT_MODE_UNUSED:
+		/* FALLTHROUGH */
 	default:
 		break;
 	}
+
+	return;
 }
 
-static int usbhs_4430ehci_io_event(const enum usbhs_omap3_port_mode
-					*port_mode)
-{
-	int event = 0;
 
-	switch (port_mode[0]) {
-	case OMAP_EHCI_PORT_MODE_PHY:
-		event |= omap_mux_wakeup_event("usbb1_ulpiphy_dat0");
-		event |= omap_mux_wakeup_event("usbb1_ulpiphy_dir");
-		break;
-
-	case OMAP_EHCI_PORT_MODE_TLL:
-		event |= omap_mux_wakeup_event("usbb1_ulpitll_stp");
-		break;
-
-	case OMAP_USBHS_PORT_MODE_UNUSED:
-	default:
-		break;
-	}
-
-	switch (port_mode[1]) {
-	case OMAP_EHCI_PORT_MODE_PHY:
-		event |= omap_mux_wakeup_event("usbb2_ulpiphy_dat0");
-		event |= omap_mux_wakeup_event("usbb2_ulpiphy_dir");
-		break;
-
-	case OMAP_EHCI_PORT_MODE_TLL:
-		event |= omap_mux_wakeup_event("usbb2_ulpitll_stp");
-		break;
-
-	case OMAP_USBHS_PORT_MODE_UNUSED:
-	default:
-		break;
-	}
-
-	return event;
-}
 static void usbhs_ehci_io_wakeup(const enum usbhs_omap3_port_mode
 					*port_mode, int enable)
 {
+
 	if (cpu_is_omap44xx()) {
 		if (enable)
 			usbhs_4430ehci_io_enable(port_mode);
 		else
 			usbhs_4430ehci_io_disable(port_mode);
-
-		omap4_trigger_ioctrl();
 	}
-
+	omap4_trigger_ioctrl();
 	/* TODO for OMAP3 */
 }
+
+
+
+
 
 static void usbhs_4430ohci_io_enable(const enum usbhs_omap3_port_mode
 					*port_mode)
 {
+	u16 reg;
+
+	/* FIXME: This funtion should use Mux frame work functions;
+	 * for now, we are hardcodeing it
+	 * This function will be later replaced by MUX framework API.
+	 */
 	switch (port_mode[0]) {
 	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DPDM:
-		omap_mux_enable_wakeup("usbb1_mm_rxrcv");
-		omap_mux_enable_wakeup("usbb1_mm_rxdp");
-		omap_mux_enable_wakeup("usbb1_mm_rxdm");
+	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
+	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
+
+		/* usbb1_mm_rxdp */
+		reg =  omap_readw(0x4A1000C4);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000C4);
 		break;
 
 	case OMAP_OHCI_PORT_MODE_PHY_4PIN_DPDM:
-		omap_mux_enable_wakeup("usbb1_mm_rxrcv");
-		/* FALLTHROUGH */
+	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
 
-	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
-		omap_mux_enable_wakeup("usbb1_mm_txdat");
-		omap_mux_enable_wakeup("usbb1_mm_txse0");
+
+		/* usbb1_mm_rxrcv */
+		reg =  omap_readw(0x4A1000CA);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000CA);
 		break;
 
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
-	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
-		omap_mux_enable_wakeup("usbb1_mm_txen");
-		/* FALLTHROUGH */
-
+	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_TLL_3PIN_DATSE0:
+
+		/* usbb1_mm_txen */
+		reg =  omap_readw(0x4A1000D0);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000D0);
+		break;
+
 	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DPDM:
-		omap_mux_enable_wakeup("usbb1_mm_txdat");
-		omap_mux_enable_wakeup("usbb1_mm_txse0");
+
+		/* usbb1_mm_txdat */
+		reg =  omap_readw(0x4A1000CE);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000CE);
+
+		/* usbb1_mm_txse0 */
+		reg =  omap_readw(0x4A1000CC);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000CC);
+
 		break;
 
 	case OMAP_USBHS_PORT_MODE_UNUSED:
@@ -556,31 +598,45 @@ static void usbhs_4430ohci_io_enable(const enum usbhs_omap3_port_mode
 	switch (port_mode[1]) {
 	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DPDM:
-		omap_mux_enable_wakeup("usbb2_mm_rxrcv");
-		omap_mux_enable_wakeup("usbb2_mm_rxdp");
-		omap_mux_enable_wakeup("usbb2_mm_rxdm");
+	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
+	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
+
+
+		reg =  omap_readw(0x4A1000F8);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000F8);
 		break;
 
 	case OMAP_OHCI_PORT_MODE_PHY_4PIN_DPDM:
-		omap_mux_enable_wakeup("usbb2_mm_rxrcv");
-		/* FALLTHROUGH */
+	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
 
-	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
-		omap_mux_enable_wakeup("usbb2_mm_txdat");
-		omap_mux_enable_wakeup("usbb2_mm_txse0");
+		/* usbb2_mm_rxrcv */
+		reg =  omap_readw(0x4A1000FA);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000FA);
 		break;
 
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
-	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
-		omap_mux_enable_wakeup("usbb2_mm_txen");
-		/* FALLTHROUGH */
-
+	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_TLL_3PIN_DATSE0:
+
+		/* usbb2_mm_txen */
+		reg =  omap_readw(0x4A1000FC);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000FC);
+		break;
+
 	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DPDM:
-		omap_mux_enable_wakeup("usbb2_mm_txdat");
-		omap_mux_enable_wakeup("usbb2_mm_txse0");
+
+		/* usbb2_mm_txdat */
+		reg =  omap_readw(0x4A100112);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A100112);
+
+		/* usbb2_mm_txse0 */
+		reg =  omap_readw(0x4A100110);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A100110);
 		break;
 
 	case OMAP_USBHS_PORT_MODE_UNUSED:
@@ -588,38 +644,61 @@ static void usbhs_4430ohci_io_enable(const enum usbhs_omap3_port_mode
 		break;
 	}
 }
+
 
 static void usbhs_4430ohci_io_disable(const enum usbhs_omap3_port_mode
 					*port_mode)
 {
+	u16 reg;
+
+	/* FIXME: This funtion should use Mux frame work functions;
+	 * for now, we are hardcodeing it
+	 * This function will be later replaced by MUX framework API.
+	 */
 	switch (port_mode[0]) {
 	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DPDM:
-		omap_mux_disable_wakeup("usbb1_mm_rxrcv");
-		omap_mux_disable_wakeup("usbb1_mm_rxdp");
-		omap_mux_disable_wakeup("usbb1_mm_rxdm");
+	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
+	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
+
+		/* usbb1_mm_rxdp */
+		reg =  omap_readw(0x4A1000C4);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000C4);
 		break;
 
 	case OMAP_OHCI_PORT_MODE_PHY_4PIN_DPDM:
-		omap_mux_disable_wakeup("usbb1_mm_rxrcv");
-		/* FALLTHROUGH */
+	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
 
-	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
-		omap_mux_disable_wakeup("usbb1_mm_txdat");
-		omap_mux_disable_wakeup("usbb1_mm_txse0");
+
+		/* usbb1_mm_rxrcv */
+		reg =  omap_readw(0x4A1000CA);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000CA);
 		break;
 
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
-	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
-		omap_mux_disable_wakeup("usbb1_mm_txen");
-		/* FALLTHROUGH */
-
+	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_TLL_3PIN_DATSE0:
+
+		/* usbb1_mm_txen */
+		reg =  omap_readw(0x4A1000D0);
+		reg |= USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000D0);
+		break;
+
 	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DPDM:
-		omap_mux_disable_wakeup("usbb1_mm_txdat");
-		omap_mux_disable_wakeup("usbb1_mm_txse0");
+
+		/* usbb1_mm_txdat */
+		reg =  omap_readw(0x4A1000CE);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000CE);
+
+		/* usbb1_mm_txse0 */
+		reg =  omap_readw(0x4A1000CC);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000CC);
+
 		break;
 
 	case OMAP_USBHS_PORT_MODE_UNUSED:
@@ -630,31 +709,45 @@ static void usbhs_4430ohci_io_disable(const enum usbhs_omap3_port_mode
 	switch (port_mode[1]) {
 	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DPDM:
-		omap_mux_disable_wakeup("usbb2_mm_rxrcv");
-		omap_mux_disable_wakeup("usbb2_mm_rxdp");
-		omap_mux_disable_wakeup("usbb2_mm_rxdm");
+	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
+	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
+
+
+		reg =  omap_readw(0x4A1000F8);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000F8);
 		break;
 
 	case OMAP_OHCI_PORT_MODE_PHY_4PIN_DPDM:
-		omap_mux_disable_wakeup("usbb2_mm_rxrcv");
-		/* FALLTHROUGH */
+	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
 
-	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
-		omap_mux_disable_wakeup("usbb2_mm_txdat");
-		omap_mux_disable_wakeup("usbb2_mm_txse0");
+		/* usbb2_mm_rxrcv */
+		reg =  omap_readw(0x4A1000FA);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000FA);
 		break;
 
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
-	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
-		omap_mux_disable_wakeup("usbb2_mm_txen");
-		/* FALLTHROUGH */
-
+	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_TLL_3PIN_DATSE0:
+
+		/* usbb2_mm_txen */
+		reg =  omap_readw(0x4A1000FC);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A1000FC);
+		break;
+
 	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DATSE0:
 	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DPDM:
-		omap_mux_disable_wakeup("usbb2_mm_txdat");
-		omap_mux_disable_wakeup("usbb2_mm_txse0");
+
+		/* usbb2_mm_txdat */
+		reg =  omap_readw(0x4A100112);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A100112);
+
+		/* usbb2_mm_txse0 */
+		reg =  omap_readw(0x4A100110);
+		reg &= ~USBHS_IO_WAKEUPENABLE;
+		omap_writew(reg, 0x4A100110);
 		break;
 
 	case OMAP_USBHS_PORT_MODE_UNUSED:
@@ -663,103 +756,25 @@ static void usbhs_4430ohci_io_disable(const enum usbhs_omap3_port_mode
 	}
 }
 
-static int usbhs_4430ohci_io_event(const enum usbhs_omap3_port_mode
-					*port_mode)
-{
-	int event = 0;
-
-	switch (port_mode[0]) {
-	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DPDM:
-		event |= omap_mux_wakeup_event("usbb1_mm_rxrcv");
-		event |= omap_mux_wakeup_event("usbb1_mm_rxdp");
-		event |= omap_mux_wakeup_event("usbb1_mm_rxdm");
-		break;
-
-	case OMAP_OHCI_PORT_MODE_PHY_4PIN_DPDM:
-		event |= omap_mux_wakeup_event("usbb1_mm_rxrcv");
-		/* FALLTHROUGH */
-
-	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
-		event |= omap_mux_wakeup_event("usbb1_mm_txdat");
-		event |= omap_mux_wakeup_event("usbb1_mm_txse0");
-		break;
-
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
-	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
-		event |= omap_mux_wakeup_event("usbb1_mm_txen");
-		/* FALLTHROUGH */
-
-	case OMAP_OHCI_PORT_MODE_TLL_3PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DPDM:
-		event |= omap_mux_wakeup_event("usbb1_mm_txdat");
-		event |= omap_mux_wakeup_event("usbb1_mm_txse0");
-		break;
-
-	case OMAP_USBHS_PORT_MODE_UNUSED:
-	default:
-		break;
-	}
-
-	switch (port_mode[1]) {
-	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_PHY_6PIN_DPDM:
-		event |= omap_mux_wakeup_event("usbb2_mm_rxrcv");
-		event |= omap_mux_wakeup_event("usbb2_mm_rxdp");
-		event |= omap_mux_wakeup_event("usbb2_mm_rxdm");
-		break;
-
-	case OMAP_OHCI_PORT_MODE_PHY_4PIN_DPDM:
-		event |= omap_mux_wakeup_event("usbb2_mm_rxrcv");
-		/* FALLTHROUGH */
-
-	case OMAP_OHCI_PORT_MODE_PHY_3PIN_DATSE0:
-		event |= omap_mux_wakeup_event("usbb2_mm_txdat");
-		event |= omap_mux_wakeup_event("usbb2_mm_txse0");
-		break;
-
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_6PIN_DPDM:
-	case OMAP_OHCI_PORT_MODE_TLL_4PIN_DPDM:
-		event |= omap_mux_wakeup_event("usbb2_mm_txen");
-		/* FALLTHROUGH */
-
-	case OMAP_OHCI_PORT_MODE_TLL_3PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DATSE0:
-	case OMAP_OHCI_PORT_MODE_TLL_2PIN_DPDM:
-		event |= omap_mux_wakeup_event("usbb2_mm_txdat");
-		event |= omap_mux_wakeup_event("usbb2_mm_txse0");
-		break;
-
-	case OMAP_USBHS_PORT_MODE_UNUSED:
-	default:
-		break;
-	}
-
-	return event;
-}
 
 static void usbhs_ohci_io_wakeup(const enum usbhs_omap3_port_mode
 					*port_mode, int enable)
 {
+
 	if (cpu_is_omap44xx()) {
 		if (enable)
 			usbhs_4430ohci_io_enable(port_mode);
 		else
 			usbhs_4430ohci_io_disable(port_mode);
-
-		omap4_trigger_ioctrl();
 	}
-
+	omap4_trigger_ioctrl();
 	/* TODO for OMAP3 */
 }
 
 void usbhs_wakeup()
 {
 	struct uhhtll_hcd_omap *omap = &uhhtll;
-	struct usbhs_omap_platform_data *pdata = &omap->platdata;
+	u32 reg;
 	char workq = 0;
 
 	if (!omap->pdev)
@@ -769,7 +784,12 @@ void usbhs_wakeup()
 		test_bit(USBHS_OHCI_SUSPENED, &omap->event_state) &&
 		!test_bit(USBHS_OHCI_RMWKP, &omap->event_state)) {
 
-		if (usbhs_4430ohci_io_event(pdata->port_mode)) {
+		/* check for the ohci wakeup
+		 * TODO, replace with I/O frame work
+		 */
+		reg = omap_readw(0x4A1000F8);
+
+		if (reg&USBHS_IO_WKUPEVNT) {
 			set_bit(USBHS_OHCI_RMWKP, &omap->event_state);
 			workq = 1;
 		}
@@ -779,7 +799,12 @@ void usbhs_wakeup()
 		test_bit(USBHS_EHCI_SUSPENED, &omap->event_state) &&
 		!test_bit(USBHS_EHCI_RMWKP, &omap->event_state)) {
 
-		if (usbhs_4430ehci_io_event(pdata->port_mode)) {
+		/* check for the ehci wakeup
+		 * TODO, replace with I/O frame work
+		 */
+		reg = omap_readw(0x4A1000CA);
+
+		if (reg&USBHS_IO_WKUPEVNT) {
 			set_bit(USBHS_EHCI_RMWKP, &omap->event_state);
 			workq = 1;
 		}
@@ -1255,6 +1280,7 @@ static void usbhs_omap_tll_init(struct uhhtll_hcd_omap *omap,
 
 static void usbhs_p1_enable(struct uhhtll_hcd_omap *omap)
 {
+
 	if (!omap->utmi_p1_fck)
 		return;
 
@@ -1263,19 +1289,15 @@ static void usbhs_p1_enable(struct uhhtll_hcd_omap *omap)
 
 	clk_enable(omap->utmi_p1_fck);
 
-	if (omap->usbtll_p1_fck)
-		clk_enable(omap->usbtll_p1_fck);
-
-	if (omap->usbhost_p1_fck)
-		clk_enable(omap->usbhost_p1_fck);
-
 end_count:
 	omap->p1_fck_count++;
+
 }
 
 
-static void usbhs_p1_disable(struct uhhtll_hcd_omap *omap)
+static void usbhs_p1_disble(struct uhhtll_hcd_omap *omap)
 {
+
 	if (!omap->utmi_p1_fck)
 		return;
 
@@ -1283,16 +1305,9 @@ static void usbhs_p1_disable(struct uhhtll_hcd_omap *omap)
 		return;
 
 	omap->p1_fck_count--;
-
-	if (omap->p1_fck_count == 0) {
+	if (omap->p1_fck_count == 0)
 		clk_disable(omap->utmi_p1_fck);
 
-		if (omap->usbtll_p1_fck)
-			clk_disable(omap->usbtll_p1_fck);
-
-		if (omap->usbhost_p1_fck)
-			clk_disable(omap->usbhost_p1_fck);
-	}
 }
 
 static void usbhs_p2_enable(struct uhhtll_hcd_omap *omap)
@@ -1306,18 +1321,13 @@ static void usbhs_p2_enable(struct uhhtll_hcd_omap *omap)
 
 	clk_enable(omap->utmi_p2_fck);
 
-	if (omap->usbtll_p2_fck)
-		clk_enable(omap->usbtll_p2_fck);
-
-	if (omap->usbhost_p2_fck)
-		clk_enable(omap->usbhost_p2_fck);
-
 end_count:
 	omap->p2_fck_count++;
+
 }
 
 
-static void usbhs_p2_disable(struct uhhtll_hcd_omap *omap)
+static void usbhs_p2_disble(struct uhhtll_hcd_omap *omap)
 {
 
 	if (!omap->utmi_p2_fck)
@@ -1327,16 +1337,9 @@ static void usbhs_p2_disable(struct uhhtll_hcd_omap *omap)
 		return;
 
 	omap->p2_fck_count--;
-
-	if (omap->p2_fck_count == 0) {
+	if (omap->p2_fck_count == 0)
 		clk_disable(omap->utmi_p2_fck);
 
-		if (omap->usbtll_p2_fck)
-			clk_disable(omap->usbtll_p2_fck);
-
-		if (omap->usbhost_p2_fck)
-			clk_disable(omap->usbhost_p2_fck);
-	}
 }
 
 
@@ -1349,7 +1352,7 @@ static void usbhs_ehci_clk(struct uhhtll_hcd_omap *omap, int on)
 			if (on)
 				usbhs_p1_enable(omap);
 			else
-				usbhs_p1_disable(omap);
+				usbhs_p1_disble(omap);
 	}
 
 	if ((pdata->port_mode[1] == OMAP_EHCI_PORT_MODE_PHY) ||
@@ -1357,7 +1360,7 @@ static void usbhs_ehci_clk(struct uhhtll_hcd_omap *omap, int on)
 			if (on)
 				usbhs_p2_enable(omap);
 			else
-				usbhs_p2_disable(omap);
+				usbhs_p2_disble(omap);
 	}
 }
 
@@ -1371,14 +1374,14 @@ static void usbhs_ohci_clk(struct uhhtll_hcd_omap *omap, int on)
 		if (on)
 			usbhs_p1_enable(omap);
 		else
-			usbhs_p1_disable(omap);
+			usbhs_p1_disble(omap);
 	}
 
 	if (is_ohci_port(pdata->port_mode[1])) {
 		if (on)
 			usbhs_p2_enable(omap);
 		else
-			usbhs_p2_disable(omap);
+			usbhs_p2_disble(omap);
 	}
 }
 
@@ -1543,6 +1546,8 @@ static int usbhs_enable(struct uhhtll_hcd_omap *omap, int do_init)
 				ret = PTR_ERR(omap->usbhost_p1_fck);
 				dev_err(&omap->pdev->dev,
 					"Unable to get HOST PORT 1 clk\n");
+			} else {
+				ret = clk_enable(omap->usbhost_p1_fck);
 			}
 
 			omap->usbtll_p1_fck = clk_get(&omap->pdev->dev,
@@ -1552,6 +1557,8 @@ static int usbhs_enable(struct uhhtll_hcd_omap *omap, int do_init)
 				ret = PTR_ERR(omap->usbtll_p1_fck);
 				dev_err(&omap->pdev->dev,
 					"Unable to get TLL CH0 clk\n");
+			} else {
+				ret = clk_enable(omap->usbtll_p1_fck);
 			}
 
 			reg |= OMAP_UHH_HOST_P1_SET_ULPITLL;
@@ -1627,6 +1634,8 @@ static int usbhs_enable(struct uhhtll_hcd_omap *omap, int do_init)
 				ret = PTR_ERR(omap->usbhost_p2_fck);
 				dev_err(&omap->pdev->dev,
 					"Unable to get HOST PORT 2 clk\n");
+			} else {
+				ret = clk_enable(omap->usbhost_p2_fck);
 			}
 
 			omap->usbtll_p2_fck = clk_get(&omap->pdev->dev,
@@ -1636,6 +1645,8 @@ static int usbhs_enable(struct uhhtll_hcd_omap *omap, int do_init)
 				ret = PTR_ERR(omap->usbtll_p2_fck);
 				dev_err(&omap->pdev->dev,
 					"Unable to get TLL CH1 clk\n");
+			} else {
+				ret = clk_enable(omap->usbtll_p2_fck);
 			}
 
 			reg |= OMAP_UHH_HOST_P2_SET_ULPITLL;
@@ -2292,15 +2303,6 @@ static int uhhtll_store(enum driver_type drvtype, enum data_type datatype,
 	return 0;
 }
 
-static void uhhtll_power_sw(const struct usbhs_omap_platform_data *pdata,
-				int on)
-{
-	if (pdata->power_gpio_num < 0)
-		return;
-
-	gpio_set_value(pdata->power_gpio_num,
-			pdata->power_gpio_inv^(on ? 1 : 0));
-}
 
 static int uhhtll_drv_enable(enum driver_type drvtype)
 {
@@ -2327,9 +2329,6 @@ static int uhhtll_drv_enable(enum driver_type drvtype)
 		usbhs_ohci_clk(omap, 1);
 		set_bit(USBHS_OHCI_LOADED, &omap->event_state);
 	}
-
-	if (!ret)
-		uhhtll_power_sw(pdata, 1);
 
 	up(&omap->mutex);
 
@@ -2374,8 +2373,6 @@ static int uhhtll_drv_disable(enum driver_type drvtype)
 		ret = -EINVAL;
 
 	usbhs_disable(omap, 1);
-
-	uhhtll_power_sw(pdata, 0);
 
 	up(&omap->mutex);
 
@@ -2952,29 +2949,6 @@ void __init usb_uhhtll_init(const struct usbhs_omap_platform_data *pdata)
 	} else if (cpu_is_omap44xx()) {
 		setup_4430ehci_io_mux(pdata->port_mode);
 		setup_4430ohci_io_mux(pdata->port_mode);
-	}
-	/*
-	 * Init external power supplier switch ON/OFF via GPIO
-	 */
-	if (pdata->power_gpio_num >= 0) {
-		if (omap_mux_init_gpio(pdata->power_gpio_num,
-					pdata->power_pad_conf)) {
-			pr_err("Could not configure MUX for GPIO:%d\n",
-				pdata->power_gpio_num);
-		}
-		if (gpio_request(pdata->power_gpio_num, "USB_POWER_GPIO")) {
-			pr_err("Could not execute GPIO:%d request\n",
-				pdata->power_gpio_num);
-			return;
-		}
-		if (gpio_direction_output(pdata->power_gpio_num,
-			pdata->power_gpio_inv)) {
-			gpio_free(pdata->power_gpio_num);
-			pr_err("Could not set GPIO:%d to output direction\n",
-				pdata->power_gpio_num);
-			return;
-		}
-		uhhtll_power_sw(pdata, 0);
 	}
 
 	oh[0] = omap_hwmod_lookup(USB_UHH_HS_HWMODNAME);

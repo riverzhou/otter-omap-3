@@ -22,11 +22,6 @@
 #ifndef __TWL6040_H__
 #define __TWL6040_H__
 
-#define TWL6040_UL_DAI		0
-#define TWL6040_DL1_DAI		1
-#define TWL6040_DL2_DAI		2
-#define TWL6040_VIB_DAI		3
-
 struct twl6040_setup_data {
 	void (*codec_enable)(int enable);
 	void *jack;

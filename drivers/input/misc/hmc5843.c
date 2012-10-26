@@ -66,7 +66,7 @@ struct hmc5843 {
 	int			mode;
 	int			index;
 
-	int			req_poll_rate;
+	int 			req_poll_rate;
 	int			enable;
 };
 
@@ -222,35 +222,30 @@ static ssize_t hmc5843_store_rate(struct device *dev,
 	int status = count;
 	int i;
 
-	if (strict_strtol(buf, 10, &val)) {
-		if ((val > 2000) && (val < 0))
-			dev_err(&hmc5843->client->dev,
-				"Failed to input value\n");
+	if (strict_strtol(buf, 10, &val))
 		return -EINVAL;
-	}
 	mutex_lock(&hmc5843->lock);
 	if (hmc5843->rate != val) {
-		val = (val < 20) ? 20 : val;
 		hmc5843->rate = val;
 #ifdef HMC5843_USE_WORK_QUEUES
 		if (val == 0) {
 			/* Set to the fastest speed */
 			i = (ARRAY_SIZE(hmc5843_sample_interval) - 1);
-		} else if (val == 2000) {
-			i = (ARRAY_SIZE(hmc5843_sample_interval) - 7);
 		} else {
 			for (i = 0; i < ARRAY_SIZE(hmc5843_sample_interval); i++) {
+				if (hmc5843_sample_interval[i] == val)
+					break;
 				/* The array is from slowest to fastest */
-				if ((hmc5843_sample_interval[i] > val) &&
-				(hmc5843_sample_interval[i + 1] <= val))
+				if ((hmc5843_sample_interval[i] < val) &&
+				(hmc5843_sample_interval[i + 1] > val))
 					break;
 			}
 		}
 		if (mag_debug)
 			dev_info(&hmc5843->client->dev, "%s:Rate picked is %d\n",
-				__func__, hmc5843_sample_interval[i + 1]);
+				__func__, hmc5843_sample_interval[i]);
 
-		hmc5843->req_poll_rate = hmc5843_sample_interval[i + 1];
+		hmc5843->req_poll_rate = hmc5843_sample_interval[i];
 #else
 		if ((val < 0) || (val < 6))
 			hmc5843->ipdev->poll_interval = hmc5843_sample_interval[val];

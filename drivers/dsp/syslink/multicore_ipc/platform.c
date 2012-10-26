@@ -1726,7 +1726,7 @@ int platform_start_callback(u16 proc_id, void *arg)
 	do {
 		status = ipc_attach(proc_id);
 		msleep(5);
-	} while (--retry_count && status < 0);
+	} while (--retry_count && (status < 0));
 
 	if (status < 0)
 		pr_err("platform_start_callback failed, status [0x%x]\n",

@@ -147,9 +147,9 @@ int hsi_driver_write_dma(struct hsi_channel *hsi_channel, u32 * data,
 		return -ENOMEM;
 	}
 
-	tmp = HSI_SRC_BURST_4x32_BIT|
+	tmp = HSI_SRC_SINGLE_ACCESS0 |
 	    HSI_SRC_MEMORY_PORT |
-	    HSI_DST_BURST_4x32_BIT |
+	    HSI_DST_SINGLE_ACCESS0 |
 	    HSI_DST_PERIPHERAL_PORT | HSI_DATA_TYPE_S32;
 	hsi_outw(tmp, base, HSI_GDD_CSDP_REG(lch));
 
@@ -245,9 +245,9 @@ int hsi_driver_read_dma(struct hsi_channel *hsi_channel, u32 * data,
 		return -ENOMEM;
 	}
 
-	tmp = HSI_DST_BURST_4x32_BIT |
+	tmp = HSI_DST_SINGLE_ACCESS0 |
 	    HSI_DST_MEMORY_PORT |
-	    HSI_SRC_BURST_4x32_BIT |
+	    HSI_SRC_SINGLE_ACCESS0 |
 	    HSI_SRC_PERIPHERAL_PORT | HSI_DATA_TYPE_S32;
 	hsi_outw(tmp, base, HSI_GDD_CSDP_REG(lch));
 
@@ -435,23 +435,24 @@ int hsi_get_info_from_gdd_lch(struct hsi_dev *hsi_ctrl, unsigned int lch,
 			      unsigned int *port, unsigned int *channel,
 			      unsigned int *is_read_path)
 {
-	int i, j;
+	int i_ports;
+	int i_chans;
 	int err = -1;
 
-	for (i = 0; i < hsi_ctrl->max_p; i++)
-		for (j = 0; j < hsi_ctrl->hsi_port[i].max_ch; j++)
-			if (hsi_ctrl->hsi_port[i].
-			    hsi_channel[j].read_data.lch == lch) {
+	for (i_ports = 0; i_ports < HSI_MAX_PORTS; i_ports++)
+		for (i_chans = 0; i_chans < HSI_PORT_MAX_CH; i_chans++)
+			if (hsi_ctrl->hsi_port[i_ports].
+			    hsi_channel[i_chans].read_data.lch == lch) {
 				*is_read_path = 1;
-				*port = i + 1;
-				*channel = j;
+				*port = i_ports + 1;
+				*channel = i_chans;
 				err = 0;
 				goto get_info_bk;
-			} else if (hsi_ctrl->hsi_port[i].
-				   hsi_channel[j].write_data.lch == lch) {
+			} else if (hsi_ctrl->hsi_port[i_ports].
+				   hsi_channel[i_chans].write_data.lch == lch) {
 				*is_read_path = 0;
-				*port = i + 1;
-				*channel = j;
+				*port = i_ports + 1;
+				*channel = i_chans;
 				err = 0;
 				goto get_info_bk;
 			}
@@ -519,7 +520,7 @@ static void do_hsi_gdd_lch(struct hsi_dev *hsi_ctrl, unsigned int gdd_lch)
 								fifo);
 				if (fifo_words_avail)
 					dev_dbg(hsi_ctrl->dev,
-						"FIFO %d not empty "
+						"WARNING: FIFO %d not empty "
 						"after DMA copy, remaining "
 						"%d/%d frames\n",
 						fifo, fifo_words_avail,
@@ -585,18 +586,12 @@ static u32 hsi_process_dma_event(struct hsi_dev *hsi_ctrl)
 static void do_hsi_gdd_tasklet(unsigned long device)
 {
 	struct hsi_dev *hsi_ctrl = (struct hsi_dev *)device;
-	int err;
 
 	dev_dbg(hsi_ctrl->dev, "DMA Tasklet : clock_enabled=%d\n",
 		hsi_ctrl->clock_enabled);
 
 	spin_lock(&hsi_ctrl->lock);
-	err = hsi_clocks_enable(hsi_ctrl->dev, __func__);
-	if (err < 0) {
-		spin_unlock(&hsi_ctrl->lock);
-		return;
-	}
-
+	hsi_clocks_enable(hsi_ctrl->dev, __func__);
 	hsi_ctrl->in_dma_tasklet = true;
 
 	hsi_process_dma_event(hsi_ctrl);
@@ -629,8 +624,7 @@ int __init hsi_gdd_init(struct hsi_dev *hsi_ctrl, const char *irq_name)
 	dev_info(hsi_ctrl->dev, "Registering IRQ %s (%d)\n",
 					irq_name, hsi_ctrl->gdd_irq);
 
-	if (request_irq(hsi_ctrl->gdd_irq, hsi_gdd_mpu_handler,
-			IRQF_NO_SUSPEND | IRQF_TRIGGER_HIGH,
+	if (request_irq(hsi_ctrl->gdd_irq, hsi_gdd_mpu_handler, IRQF_DISABLED,
 			irq_name, hsi_ctrl) < 0) {
 		dev_err(hsi_ctrl->dev, "FAILED to request GDD IRQ %d\n",
 			hsi_ctrl->gdd_irq);
@@ -642,6 +636,6 @@ int __init hsi_gdd_init(struct hsi_dev *hsi_ctrl, const char *irq_name)
 
 void hsi_gdd_exit(struct hsi_dev *hsi_ctrl)
 {
-	tasklet_kill(&hsi_ctrl->hsi_gdd_tasklet);
+	tasklet_disable(&hsi_ctrl->hsi_gdd_tasklet);
 	free_irq(hsi_ctrl->gdd_irq, hsi_ctrl);
 }

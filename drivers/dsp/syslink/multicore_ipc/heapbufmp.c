@@ -383,13 +383,13 @@ static int _heapbufmp_create(void **handle_ptr,
 	/* Initialize return parameter. */
 	*handle_ptr = NULL;
 
-	handle = kzalloc(sizeof(struct heapbufmp_object), GFP_KERNEL);
+	handle = kmalloc(sizeof(struct heapbufmp_object), GFP_KERNEL);
 	if (handle == NULL) {
 		retval = -ENOMEM;
 		goto error;
 	}
 
-	obj = kzalloc(sizeof(struct heapbufmp_obj), GFP_KERNEL);
+	obj = kmalloc(sizeof(struct heapbufmp_obj), GFP_KERNEL);
 	if (obj == NULL) {
 		retval = -ENOMEM;
 		goto error;

@@ -39,13 +39,13 @@
 #define OMAP_ALTELECTRICALSEL		(1 << 5)
 
 /* 34xx/44xx mux bit defines */
-#define OMAP_INPUT_EN		(1 << 8) /* INPUTENABLE: input */
-#define OMAP_OFF_EN		(1 << 9) /* OFFMODEENABLE: off values valid */
-#define OMAP_OFFOUT_EN		(1 << 10)/* OFFMODEOUTENABLE: input */
-#define OMAP_OFFOUT_VAL		(1 << 11)/* OFFMODEOUTVALUE: high */
-#define OMAP_OFF_PULL_EN	(1 << 12)/* OFFMODEPULLUDENABLE: activated */
-#define OMAP_OFF_PULL_UP	(1 << 13)/* OFFMODEPULLTYPESELECT: pullup */
-#define OMAP_WAKEUP_EN		(1 << 14)/* WAKEUPENABLE: enable IO wakeup */
+#define OMAP_INPUT_EN			(1 << 8)
+#define OMAP_OFF_EN			(1 << 9)
+#define OMAP_OFFOUT_EN			(0 << 10)
+#define OMAP_OFFOUT_VAL			(1 << 11)
+#define OMAP_OFF_PULL_EN		(1 << 12)
+#define OMAP_OFF_PULL_UP		(1 << 13)
+#define OMAP_WAKEUP_EN			(1 << 14)
 
 /* 44xx specific mux bit defines */
 #define OMAP_WAKEUP_EVENT		(1 << 15)
@@ -59,12 +59,12 @@
 
 /* Off mode states */
 #define OMAP_PIN_OFF_NONE		0
-#define OMAP_PIN_OFF_OUTPUT_HIGH	(OMAP_OFF_EN | OMAP_OFFOUT_VAL)
-#define OMAP_PIN_OFF_OUTPUT_LOW		OMAP_OFF_EN
-#define OMAP_PIN_OFF_INPUT_PULLUP	(OMAP_OFF_EN | OMAP_OFFOUT_EN \
-					| OMAP_OFF_PULL_EN | OMAP_OFF_PULL_UP)
-#define OMAP_PIN_OFF_INPUT_PULLDOWN	(OMAP_OFF_EN | OMAP_OFFOUT_EN \
-					| OMAP_OFF_PULL_EN)
+#define OMAP_PIN_OFF_OUTPUT_HIGH	(OMAP_OFF_EN | OMAP_OFFOUT_EN \
+						| OMAP_OFFOUT_VAL)
+#define OMAP_PIN_OFF_OUTPUT_LOW		(OMAP_OFF_EN | OMAP_OFFOUT_EN)
+#define OMAP_PIN_OFF_INPUT_PULLUP	(OMAP_OFF_EN | OMAP_OFF_PULL_EN \
+						| OMAP_OFF_PULL_UP)
+#define OMAP_PIN_OFF_INPUT_PULLDOWN	(OMAP_OFF_EN | OMAP_OFF_PULL_EN)
 #define OMAP_PIN_OFF_WAKEUPENABLE	OMAP_WAKEUP_EN
 
 #define OMAP_MODE_GPIO(x)	(((x) & OMAP_MUX_MODE7) == OMAP_MUX_MODE4)
@@ -172,7 +172,6 @@ int omap_mux_init_gpio(int gpio, int val);
  */
 int omap_mux_init_signal(const char *muxname, int val);
 u16 omap_mux_read_signal(const char *muxname);
-int omap_mux_wakeup_event(const char *muxname);
 int omap_mux_enable_wakeup(const char *muxname);
 int omap_mux_disable_wakeup(const char *muxname);
 
@@ -186,15 +185,7 @@ static inline int omap_mux_init_signal(char *muxname, int val)
 {
 	return 0;
 }
-static inline int omap_mux_wakeup_event(char *muxname)
-{
-	return 0;
-}
 static inline int omap_mux_enable_wakeup(char *muxname)
-{
-	return 0;
-}
-static inline int omap_mux_disable_wakeup(char *muxname)
 {
 	return 0;
 }

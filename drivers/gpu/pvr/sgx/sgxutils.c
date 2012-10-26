@@ -525,6 +525,7 @@ PVRSRV_ERROR SGXScheduleCCBCommandKM(PVRSRV_DEVICE_NODE		*psDeviceNode,
 {
 	PVRSRV_ERROR		eError;
 
+	SYS_DATA *psSysData;
 	
 	PDUMPSUSPEND();
 
@@ -551,6 +552,9 @@ PVRSRV_ERROR SGXScheduleCCBCommandKM(PVRSRV_DEVICE_NODE		*psDeviceNode,
 
 				psDeviceNode->bReProcessDeviceCommandComplete = IMG_TRUE;
 				eError = PVRSRV_OK;
+
+				SysAcquireData(&psSysData);
+				OSScheduleMISR((IMG_VOID *)psSysData);
 			}
 			else
 			{
@@ -662,8 +666,8 @@ PVRSRV_ERROR SGXCleanupRequest(PVRSRV_DEVICE_NODE *psDeviceNode,
 				PVR_DBG_BREAK;
 				return eError;
 		}
-		
-		
+
+
 		#if !defined(NO_HARDWARE)
 		if(PollForValueKM(&psHostCtl->ui32CleanupStatus,
 						  PVRSRV_USSE_EDM_CLEANUPCMD_COMPLETE,
@@ -677,9 +681,9 @@ PVRSRV_ERROR SGXCleanupRequest(PVRSRV_DEVICE_NODE *psDeviceNode,
 			PVR_DBG_BREAK;
 		}
 		#endif
-	
+
 		#if defined(PDUMP)
-		
+
 		PDUMPCOMMENTWITHFLAGS(0, "Host Control - Poll for clean-up request to complete");
 		PDUMPMEMPOL(psHostCtlMemInfo,
 					offsetof(SGXMKIF_HOST_CTL, ui32CleanupStatus),
@@ -688,8 +692,8 @@ PVRSRV_ERROR SGXCleanupRequest(PVRSRV_DEVICE_NODE *psDeviceNode,
 					PDUMP_POLL_OPERATOR_EQUAL,
 					0,
 					MAKEUNIQUETAG(psHostCtlMemInfo));
-		#endif 
-	
+		#endif
+
 		if (eError != PVRSRV_OK)
 		{
 			return eError;

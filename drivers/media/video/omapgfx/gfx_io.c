@@ -471,8 +471,6 @@ static int v4gfx_frame_unlock(struct v4gfx_device *vout, int bufidx)
 		if (rv == 0) {
 			if (iteration++ < V4GFX_FRAME_UNLOCK_TIMEOUT)
 				msleep(1);	/* milliseconds */
-			else
-				break;	/* Timed out */
 		}
 	} while (rv == 0);
 

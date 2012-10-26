@@ -40,10 +40,20 @@
 #define CUSTOM_ERROR			0x2
 #define STANDARD_ERROR			0x0
 #define INBAND_ERROR			0x0
-#define CLEAR_STDERR_LOG		80000000
+#define CLEAR_STDERR_LOG		0x80000000
+#define MAIN_STDERR_LOG			0x80000000
+#define MAIN_ERR_FLTCNT			0x00080000
+#define MAIN_ERR_ERRCNT			0x00040000
+#define CLEAR_STDERR_LOG (MAIN_STDERR_LOG|MAIN_ERR_FLTCNT|MAIN_ERR_ERRCNT)
 #define EMIF_KERRLOG_OFFSET		0x10
 #define L3_SLAVE_ADDRESS_OFFSET		0x14
 #define LOGICAL_ADDR_ERRORLOG		0x4
+#define L3_STD_HDR_OFFSET			0x4
+#define L3_STD_MSTADDR_OFFSET		0x8
+#define L3_STD_SLVADDR_OFFSET		0xc
+#define L3_CUS_INFO_OFFSET			0x1c
+#define L3_CUS_MSTADDR_OFFSET		0x20
+#define L3_CUS_OPCODE_OFFSET		0x24
 
 u32 l3_flagmux_regerr[3] = {
 	0x50C,
@@ -188,7 +198,7 @@ void __iomem *l2cache_base;
 void __iomem *gic_cpu_base_addr;
 void __iomem *gic_dist_base_addr;
 
-#ifndef CONFIG_SECURITY_MIDDLEWARE_COMPONENT
+#ifndef CONFIG_TF_MSHIELD
 static struct clockdomain *l4_secure_clkdm;
 #endif
 
@@ -208,12 +218,6 @@ void __init gic_init_irq(void)
 #ifdef CONFIG_CACHE_L2X0
 static int __init omap_l2_cache_init(void)
 {
-	u32 l2x0_auxctrl;
-	u32 l2x0_por;
-	u32 l2x0_lockdown;
-	u32 l2x0_dr_lat;
-	u32 l2x0_tr_lat;
-
 	/*
 	 * To avoid code running on other OMAPs in
 	 * multi-omap builds
@@ -225,72 +229,29 @@ static int __init omap_l2_cache_init(void)
 	l2cache_base = ioremap(OMAP44XX_L2CACHE_BASE, SZ_4K);
 	BUG_ON(!l2cache_base);
 
-	if (omap_rev() == OMAP4430_REV_ES1_0) {
-		l2x0_auxctrl = OMAP443X_L2X0_AUXCTL_VALUE_ES1;
-		goto skip_auxctlr;
-	}
-
-	if (cpu_is_omap446x()) {
-		if (omap_rev() == OMAP4460_REV_ES1_0) {
-			l2x0_auxctrl = OMAP446X_L2X0_AUXCTL_VALUE_ES1;
-			l2x0_por = OMAP446X_PL310_POR_ES1;
-			l2x0_lockdown = 0xa5a5;
-		} else {
-			l2x0_auxctrl = OMAP446X_L2X0_AUXCTL_VALUE;
-			l2x0_por = OMAP446X_PL310_POR;
-			l2x0_lockdown = 0;
-		}
-		l2x0_dr_lat = OMAP446X_PL310_D_RAM_LAT;
-	} else {
-		l2x0_auxctrl = OMAP443X_L2X0_AUXCTL_VALUE;
-		l2x0_por = OMAP443X_PL310_POR;
-		l2x0_lockdown = 0;
-		l2x0_dr_lat = OMAP443X_PL310_D_RAM_LAT;
-	}
-
-	/* Set POR through PPA service only in EMU/HS devices */
-	if (omap_type() != OMAP2_DEVICE_TYPE_GP) {
-		omap4_secure_dispatcher(
+	if (omap_rev() != OMAP4430_REV_ES1_0) {
+		/* Set POR through PPA service only in EMU/HS devices */
+		if (omap_type() != OMAP2_DEVICE_TYPE_GP)
+			omap4_secure_dispatcher(
 				PPA_SERVICE_PL310_POR, 0x7, 1,
-				l2x0_por, 0, 0, 0);
-	} else if (omap_rev() > OMAP4430_REV_ES2_1)
-			omap_smc1(0x113, l2x0_por, 0x00);
+				PL310_POR, 0, 0, 0);
+		else
+			omap_smc1(0x113, 0x7);
 
+		omap_smc1(0x109, OMAP4_L2X0_AUXCTL_VALUE);
+	}
 
-	/*
-	 * FIXME : Temporary WA for the OMAP4460 stability
-	 * issue. For OMAP4460 the effective L2X0 Size  = 512 KB
-	 * with this WA.
-	 */
-	writel_relaxed(l2x0_lockdown, l2cache_base + 0x900);
-	writel_relaxed(l2x0_lockdown, l2cache_base + 0x908);
-	writel_relaxed(l2x0_lockdown, l2cache_base + 0x904);
-	writel_relaxed(l2x0_lockdown, l2cache_base + 0x90C);
-
-	/*
-	 * Doble Linefill, BRESP enabled, $I and $D prefetch ON,
-	 * Share-override = 1, NS lockdown enabled
-	 */
-
-	/* Set PL310 Auxiliary Control Register */
-	omap_smc1(0x109, l2x0_auxctrl, 0x00);
-
-	/*  Set Tag and Data RAM Latency Control Registers
-	 *  Data RAM latency depended by CPU type
-	 *  Tag RAM latency keep by default
-	 */
-	l2x0_tr_lat = readl_relaxed(l2cache_base + 0x108);
-	omap_smc1(0x112, l2x0_tr_lat, l2x0_dr_lat);
-
-skip_auxctlr:
 	/* Enable PL310 L2 Cache controller */
-	omap_smc1(0x102, 0x01, 0x00);
+	omap_smc1(0x102, 0x1);
 
 	/*
 	 * 32KB way size, 16-way associativity,
 	 * parity disabled
 	 */
-	l2x0_init(l2cache_base, l2x0_auxctrl, 0xd0000fff);
+	if (omap_rev() == OMAP4430_REV_ES1_0)
+		l2x0_init(l2cache_base, 0x0e050000, 0xc0000fff);
+	else
+		l2x0_init(l2cache_base, OMAP4_L2X0_AUXCTL_VALUE, 0xd0000fff);
 
 	return 0;
 }
@@ -298,7 +259,7 @@ early_initcall(omap_l2_cache_init);
 #endif
 
 
-#ifndef CONFIG_SECURITY_MIDDLEWARE_COMPONENT
+#ifndef CONFIG_TF_MSHIELD
 /*
  * omap4_sec_dispatcher: Routine to dispatch low power secure
  * service routines
@@ -444,6 +405,11 @@ static irqreturn_t l3_interrupt_handler(int irq, void *dev_id)
 			stderrlog_main = (u32)l3_base[i] +
 				(*(l3_targ_stderrlog_main[i] + err_source));
 			stderrlog_main_reg_val =  readl(stderrlog_main);
+			source_name =
+				(char *)(*(l3_targ_stderrlog_main_sourcename[i]
+					+ err_source));
+			slave_addr = stderrlog_main +
+					L3_SLAVE_ADDRESS_OFFSET;
 
 			switch ((stderrlog_main_reg_val & CUSTOM_ERROR)) {
 			case STANDARD_ERROR:
@@ -452,23 +418,36 @@ static irqreturn_t l3_interrupt_handler(int irq, void *dev_id)
 						ctrl_sec_err_stat[inttype];
 				ctrl_sec_err_status_regval =
 						readl(ctrl_sec_err_status);
-				source_name =
-				(char *)(*(l3_targ_stderrlog_main_sourcename[i]
-					+ err_source));
-				slave_addr = stderrlog_main +
-
-						L3_SLAVE_ADDRESS_OFFSET;
 				if (!ctrl_sec_err_status_regval) {
 					/*
 					 * get the details about the inband
 					 * error as command etc and print
 					 * details
 					 */
-					pr_crit("L3 standard error: SOURCE:%s"
-						"at address 0x%x\n",
-						source_name, readl(slave_addr));
-					dump_stack();
+					pr_crit("***L3 standard error: "
+						"SOURCE:%s at address 0x%x "
+						"Hdr=0x%x MstAddr=0x%x "
+						"SlvAddr=0x%x\n",
+					source_name, readl(slave_addr),
+					readl(stderrlog_main +
+						L3_STD_HDR_OFFSET),
+					readl(stderrlog_main +
+						L3_STD_MSTADDR_OFFSET),
+					readl(stderrlog_main +
+						L3_STD_SLVADDR_OFFSET));
 				} else {
+					pr_crit("***L3 standard error "
+						"FIREWALL: "
+						"SOURCE:%s at address 0x%x "
+						"Hdr=0x%x MstAddr=0x%x "
+						"SlvAffr=0x%x\n",
+					source_name, readl(slave_addr),
+					readl(stderrlog_main +
+						L3_STD_HDR_OFFSET),
+					readl(stderrlog_main +
+						L3_STD_MSTADDR_OFFSET),
+					readl(stderrlog_main +
+						L3_STD_SLVADDR_OFFSET));
 					/* Then this is a Fire Wall Error */
 					if (omap_type() == OMAP2_DEVICE_TYPE_GP)
 						omap_fw_error_handler(
@@ -480,13 +459,15 @@ static irqreturn_t l3_interrupt_handler(int irq, void *dev_id)
 					CLEAR_STDERR_LOG), stderrlog_main);
 				break;
 			case CUSTOM_ERROR:
-				pr_crit("CUSTOM SRESP error with SOURCE:%s\n",
-				(char *)(*(l3_targ_stderrlog_main_sourcename[i]
-						+ err_source)));
+				pr_crit("***L3 CUSTOM error: SOURCE:%s "
+				"Info=0x%x MstAddr=0x%x OpCode=%d\n",
+				source_name,
+				readl(stderrlog_main + L3_CUS_INFO_OFFSET),
+				readl(stderrlog_main + L3_CUS_MSTADDR_OFFSET),
+				readl(stderrlog_main + L3_CUS_OPCODE_OFFSET));
 				/* clear the std error log*/
 				writel((stderrlog_main_reg_val |
 					CLEAR_STDERR_LOG), stderrlog_main);
-				dump_stack();
 				break;
 			default:
 				/* Nothing to be handled here as of now */

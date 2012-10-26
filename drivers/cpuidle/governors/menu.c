@@ -125,21 +125,10 @@ struct menu_device {
 #define LOAD_INT(x) ((x) >> FSHIFT)
 #define LOAD_FRAC(x) LOAD_INT(((x) & (FIXED_1-1)) * 100)
 
-static int get_loadavg(struct cpuidle_device *dev)
+static int get_loadavg(void)
 {
-	unsigned long this;
+	unsigned long this = this_cpu_load();
 
-	/*
-	 * this_cpu_load() returns the value of rq->load.weight
-	 * at the previous scheduler tick and not the current value.
-	 * If the timer expired, that means we are in idle,there
-	 * are no more runnable processes in the current queue
-	 * =>return the current value of rq->load.weight which is 0.
-	 */
-	if (dev->hrtimer_expired == 1)
-		return 0;
-	else
-		this = this_cpu_load();
 
 	return LOAD_INT(this) * 10 + LOAD_FRAC(this) / 10;
 }
@@ -177,13 +166,13 @@ static inline int which_bucket(unsigned int duration)
  * to be, the higher this multiplier, and thus the higher
  * the barrier to go to an expensive C state.
  */
-static inline int performance_multiplier(struct cpuidle_device *dev)
+static inline int performance_multiplier(void)
 {
 	int mult = 1;
 
 	/* for higher loadavg, we are more reluctant */
 
-	mult += 2 * get_loadavg(dev);
+	mult += 2 * get_loadavg();
 
 	/* for IO wait tasks (per cpu!) we add 5x each */
 	mult += 10 * nr_iowait_cpu(smp_processor_id());
@@ -247,7 +236,6 @@ static int menu_select(struct cpuidle_device *dev)
 	int latency_req = pm_qos_request(PM_QOS_CPU_DMA_LATENCY);
 	int i;
 	int multiplier;
-	ktime_t timeout;
 
 	if (data->needs_update) {
 		menu_update(dev);
@@ -268,7 +256,7 @@ static int menu_select(struct cpuidle_device *dev)
 
 	data->bucket = which_bucket(data->expected_us);
 
-	multiplier = performance_multiplier(dev);
+	multiplier = performance_multiplier();
 
 	/*
 	 * if the correction factor is 0 (eg first time init or cpu hotplug
@@ -290,11 +278,6 @@ static int menu_select(struct cpuidle_device *dev)
 	if (data->expected_us > 5)
 		data->last_state_idx = CPUIDLE_DRIVER_STATE_START;
 
-	if (dev->enable_state == 0) {
-		data->last_state_idx = CPUIDLE_DRIVER_STATE_START;
-		return data->last_state_idx;
-	}
-
 
 	/* find the deepest idle state that satisfies our constraints */
 	for (i = CPUIDLE_DRIVER_STATE_START; i < dev->state_count; i++) {
@@ -304,27 +287,12 @@ static int menu_select(struct cpuidle_device *dev)
 			break;
 		if (s->exit_latency > latency_req)
 			break;
-		if (s->exit_latency * multiplier > data->predicted_us) {
-			/*
-			 * Could not enter the next C-state because of a high
-			 * load. Set a timer in order to check the load again
-			 * after the timeout expires and re-evaluate cstate.
-			 */
-			if (s->hrtimer_timeout != 0 && get_loadavg(dev)) {
-				timeout =
-				       ktime_set(0,
-					   s->hrtimer_timeout * NSEC_PER_USEC);
-				hrtimer_start(&dev->cstate_timer, timeout,
-					   HRTIMER_MODE_REL);
-			}
+		if (s->exit_latency * multiplier > data->predicted_us)
 			break;
-		}
 		data->exit_us = s->exit_latency;
 		data->last_state_idx = i;
 	}
 
-	/* Reset hrtimer_expired which is set when the hrtimer fires */
-	dev->hrtimer_expired = 0;
 	return data->last_state_idx;
 }
 

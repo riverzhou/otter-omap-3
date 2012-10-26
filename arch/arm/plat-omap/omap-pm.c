@@ -275,6 +275,7 @@ int omap_pm_set_max_mpu_wakeup_lat(struct pm_qos_request_list **qos_request,
 	mutex_unlock(&mpu_lat_mutex);
 	return 0;
 }
+EXPORT_SYMBOL(omap_pm_set_max_mpu_wakeup_lat);
 
 
 int omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, long r)
@@ -316,7 +317,7 @@ int omap_pm_set_min_bus_tput(struct device *dev, u8 agent_id, long r)
 	ret = omap_device_set_rate(&dummy_l3_dev, l3_dev, target_level);
 
 	if (ret)
-		pr_debug("Unable to change level for interconnect bandwidth to %ld\n",
+		pr_err("Unable to change level for interconnect bandwidth to %ld\n",
 			target_level);
 unlock:
 	mutex_unlock(&bus_tput_mutex);
@@ -633,10 +634,17 @@ int omap_pm_set_min_mpu_freq(struct device *dev, unsigned long f)
 		 * Ensure that this request is not conflicting with cpufreq
 		 * constraints. If that is the case, cpufreq wins.
 		 */
-		if ((f/1000) < policy.min)
-			f = policy.min * 1000;
-		if ((f/1000) > policy.max)
+		if ((f/1000) < policy.min) {
+			printk(KERN_WARNING "%s: called with freq below min freq! (f=%lu min=%lu)\n",
+			       __func__, f/1000, policy.min);
+                      f = policy.min * 1000;
+		}
+
+		if ((f/1000) > policy.max) {
+			printk(KERN_WARNING "%s: called with freq above max freq! (f=%lu max=%lu)\n",
+			       __func__, f/1000, policy.max);
 			f = policy.max * 1000;
+		}
 
 		add_req_tput(dev, f, mpu_tput);
 	}

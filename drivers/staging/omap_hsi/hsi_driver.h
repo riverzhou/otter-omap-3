@@ -36,12 +36,7 @@
 #include <linux/seq_file.h>
 #include <linux/pm_runtime.h>
 
-#include <plat/omap-pm.h>
-
 #include <mach/omap_hsi.h>
-#include <plat/clockdomain.h>
-#include <plat/powerdomain.h>
-
 #include <linux/hsi_driver_if.h>
 
 /* Channel states */
@@ -60,20 +55,16 @@
 /* Number of DMA channels when nothing is defined for the device */
 #define HSI_DMA_CHANNEL_DEFAULT		8
 
-/* Defines bit number for atomic operations */
-#define HSI_FLAGS_TASKLET_LOCK		0 /* prevents to disable IRQ and */
-					  /* schedule tasklet more than once */
-
 
 #define LOG_NAME		"OMAP HSI: "
 
 /* SW strategies for HSI FIFO mapping */
 enum {
 	HSI_FIFO_MAPPING_UNDEF = 0,
-	HSI_FIFO_MAPPING_ALL_PORT1,	/* ALL FIFOs mapped on port 1 */
-	HSI_FIFO_MAPPING_ALL_PORT2,	/* ALL FIFOs mapped on port 2 */
 	HSI_FIFO_MAPPING_SSI,	/* 8 FIFOs per port (SSI compatible mode) */
+	HSI_FIFO_MAPPING_ALL_PORT1,	/* ALL FIFOs mapped on 1st port */
 };
+#define HSI_FIFO_MAPPING_DEFAULT	HSI_FIFO_MAPPING_ALL_PORT1
 
 /* Device identifying constants */
 enum {
@@ -124,12 +115,10 @@ struct hsi_channel {
  * struct hsi_port - hsi port driver data
  * @hsi_channel: Array of channels in the port
  * @hsi_controller: Reference to the HSI controller
- * @flags: atomic flags (for atomic operations)
- * @port_number: port number. Range [1,2]
+ * @port_number: port number
  * @max_ch: maximum number of channels supported on the port
  * @n_irq: HSI irq line use to handle interrupts (0 or 1)
  * @irq: IRQ number
- * @wake_rx_3_wires_mode: receiver 3 wires mode (1) or 4 wires mode (0)
  * @cawake_gpio: GPIO number for cawake line (-1 if none)
  * @cawake_gpio_irq: IRQ number for cawake gpio events
  * @cawake_status: Tracks CAWAKE line status
@@ -137,7 +126,6 @@ struct hsi_channel {
  * @acwake_status: Bitmap to track ACWAKE line status per channel
  * @in_int_tasklet: True if interrupt tasklet for this port is currently running
  * @in_cawake_tasklet: True if CAWAKE tasklet for this port is currently running
- * @tasklet_lock: prevents to disable IRQ and schedule tasklet more than once
  * @counters_on: indicates if the HSR counters are in use or not
  * @reg_counters: stores the previous counters values when deactivated
  * @lock: Serialize access to the port registers and internal data
@@ -147,12 +135,11 @@ struct hsi_channel {
 struct hsi_port {
 	struct hsi_channel hsi_channel[HSI_PORT_MAX_CH];
 	struct hsi_dev *hsi_controller;
-	unsigned long flags;
-	u8 port_number;
+	u8 flags;
+	u8 port_number;		/* Range [1,2] */
 	u8 max_ch;
 	u8 n_irq;
 	int irq;
-	int wake_rx_3_wires_mode;
 	int cawake_gpio;
 	int cawake_gpio_irq;
 	int cawake_status;
@@ -164,7 +151,8 @@ struct hsi_port {
 	unsigned long reg_counters;
 	spinlock_t lock; /* access to the port registers and internal data */
 	struct tasklet_struct hsi_tasklet;
-	struct tasklet_struct cawake_tasklet;
+	struct tasklet_struct cawake_tasklet;	/* SSI_TODO : need to replace */
+						/* by a workqueue */
 };
 
 /**
@@ -226,18 +214,12 @@ struct hsi_platform_data {
 	int (*device_enable) (struct platform_device *pdev);
 	int (*device_shutdown) (struct platform_device *pdev);
 	int (*device_idle) (struct platform_device *pdev);
-	int (*device_set_rate)(struct device *req_dev, struct device *dev,
-			       unsigned long rate);
-	int (*wakeup_enable) (int hsi_port);
-	int (*wakeup_disable) (int hsi_port);
-	int (*wakeup_is_from_hsi) (int *hsi_port);
-	int (*board_suspend)(int hsi_port, bool dev_may_wakeup);
-	int (*board_resume)(int hsi_port);
+	int (*wakeup_enable) (struct hsi_dev *hsi_ctrl, int hsi_port);
+	int (*wakeup_disable) (struct hsi_dev *hsi_ctrl, int hsi_port);
 	u8 num_ports;
-	struct hsi_ctrl_ctx *ctx;
+	struct ctrl_ctx *ctx;
 	u8 hsi_gdd_chan_count;
 	unsigned long default_hsi_fclk;
-	unsigned int fifo_mapping_strategy;
 };
 
 /* HSI Bus */
@@ -257,7 +239,6 @@ bool hsi_is_hst_port_busy(struct hsi_port *pport);
 bool hsi_is_hst_controller_busy(struct hsi_dev *hsi_ctrl);
 
 int hsi_driver_enable_interrupt(struct hsi_port *pport, u32 flag);
-int hsi_driver_disable_interrupt(struct hsi_port *pport, u32 flag);
 int hsi_driver_enable_read_interrupt(struct hsi_channel *hsi_channel,
 					u32 *data);
 int hsi_driver_enable_write_interrupt(struct hsi_channel *hsi_channel,
@@ -301,10 +282,6 @@ long hsi_hst_buffer_reg(struct hsi_dev *hsi_ctrl,
 long hsi_hsr_buffer_reg(struct hsi_dev *hsi_ctrl,
 			unsigned int port, unsigned int channel);
 u8 hsi_get_rx_fifo_occupancy(struct hsi_dev *hsi_ctrl, u8 fifo);
-u8 hsi_hsr_fifo_flush_channel(struct hsi_dev *hsi_ctrl, unsigned int port,
-				unsigned int channel);
-u8 hsi_hst_fifo_flush_channel(struct hsi_dev *hsi_ctrl, unsigned int port,
-				unsigned int channel);
 
 void hsi_set_pm_force_hsi_on(struct hsi_dev *hsi_ctrl);
 void hsi_set_pm_default(struct hsi_dev *hsi_ctrl);

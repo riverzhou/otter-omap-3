@@ -291,6 +291,7 @@ static int fm_v4l2_vidioc_s_ctrl(struct file *file, void *priv,
 		struct v4l2_control *ctrl)
 {
 	struct fmdev *fmdev = video_drvdata(file);
+	unsigned int emph_filter;
 	int ret = -EINVAL;
 
 	switch (ctrl->id) {
@@ -300,6 +301,31 @@ static int fm_v4l2_vidioc_s_ctrl(struct file *file, void *priv,
 
 	case V4L2_CID_AUDIO_VOLUME:	/* set volume */
 		ret = fm_rx_set_volume(fmdev, (unsigned short)ctrl->value);
+		break;
+
+	case V4L2_CID_TUNE_POWER_LEVEL: /* set TX power level - ext control */
+		if (ctrl->value >= FM_PWR_LVL_LOW &&
+			ctrl->value <= FM_PWR_LVL_HIGH) {
+			ctrl->value = FM_PWR_LVL_HIGH - ctrl->value;
+			ret = fm_tx_set_pwr_lvl(fmdev,
+					(unsigned char)ctrl->value);
+		} else
+			ret = -ERANGE;
+		break;
+
+	case V4L2_CID_TUNE_PREEMPHASIS:
+		if (ctrl->value < V4L2_PREEMPHASIS_DISABLED ||
+				ctrl->value > V4L2_PREEMPHASIS_75_uS) {
+			ret = -EINVAL;
+			break;
+		}
+		if (ctrl->value == V4L2_PREEMPHASIS_DISABLED)
+			emph_filter = FM_TX_PREEMPH_OFF;
+		else if (ctrl->value == V4L2_PREEMPHASIS_50_uS)
+			emph_filter = FM_TX_PREEMPH_50US;
+		else
+			emph_filter = FM_TX_PREEMPH_75US;
+		ret = fm_tx_set_preemph_filter(fmdev, emph_filter);
 		break;
 	}
 
@@ -506,71 +532,20 @@ static int fm_v4l2_vidioc_g_ext_ctrls(struct file *file, void *priv,
 static int fm_v4l2_vidioc_s_ext_ctrls(struct file *file, void *priv,
 		struct v4l2_ext_controls *ext_ctrls)
 {
-	struct fmdev *fmdev = video_drvdata(file);
+	struct v4l2_control ctrl;
 	int index;
 	int ret = -EINVAL;
-	unsigned int emph_filter;
 
-	if (V4L2_CTRL_CLASS_FM_TX != ext_ctrls->ctrl_class)
-		return -EINVAL;
-
-	for (index = 0; index < ext_ctrls->count; index++) {
-
-		switch (ext_ctrls->controls[index].id) {
-		case V4L2_CID_RDS_TX_RADIO_TEXT:
-			ret = fm_tx_set_radio_text(fmdev, ext_ctrls->controls[index].string, 2);
+	if (V4L2_CTRL_CLASS_FM_TX == ext_ctrls->ctrl_class) {
+		for (index = 0; index < ext_ctrls->count; index++) {
+			ctrl.id = ext_ctrls->controls[index].id;
+			ctrl.value = ext_ctrls->controls[index].value;
+			ret = fm_v4l2_vidioc_s_ctrl(file, priv, &ctrl);
 			if (ret < 0) {
-				fmerr("Failed to set RDS Radio Text\n");
-				return ret;
-			}
-			break;
-
-		case V4L2_CID_RDS_TX_PS_NAME:
-			ret = fm_tx_set_radio_text(fmdev, ext_ctrls->controls[index].string, 1);
-			if (ret < 0) {
-				fmerr("Failed to set RDS Radio PS Name\n");
-				return ret;
-			}
-			break;
-		case V4L2_CID_RDS_TX_PI:
-			ret = set_rds_picode(fmdev, ext_ctrls->controls[index].value);
-			if (ret < 0) {
-				fmerr("Failed to set RDS Radio PS Name\n");
-				return ret;
-			}
-			break;
-		case V4L2_CID_RDS_TX_PTY:
-			ret = set_rds_pty(fmdev, ext_ctrls->controls[index].value);
-			if (ret < 0) {
-				fmerr("Failed to set RDS Radio PS Name\n");
-				return ret;
-			}
-			break;
-		case V4L2_CID_TUNE_POWER_LEVEL: /* set TX power level - ext control */
-			if (ext_ctrls->controls[index].value >= FM_PWR_LVL_LOW &&
-					ext_ctrls->controls[index].value <= FM_PWR_LVL_HIGH) {
-				ext_ctrls->controls[index].value =
-					FM_PWR_LVL_HIGH - ext_ctrls->controls[index].value;
-				ret = fm_tx_set_pwr_lvl(fmdev,
-						(unsigned char)ext_ctrls->controls[index].value);
-			} else
-				ret = -ERANGE;
-			break;
-		case V4L2_CID_TUNE_PREEMPHASIS:
-			if (ext_ctrls->controls[index].value < V4L2_PREEMPHASIS_DISABLED ||
-					ext_ctrls->controls[index].value > V4L2_PREEMPHASIS_75_uS) {
-				ret = -EINVAL;
+				ext_ctrls->error_idx = index;
 				break;
 			}
-			if (ext_ctrls->controls[index].value == V4L2_PREEMPHASIS_DISABLED)
-				emph_filter = FM_TX_PREEMPH_OFF;
-			else if (ext_ctrls->controls[index].value == V4L2_PREEMPHASIS_50_uS)
-				emph_filter = FM_TX_PREEMPH_50US;
-			else
-				emph_filter = FM_TX_PREEMPH_75US;
-
-			ret = fm_tx_set_preemph_filter(fmdev, emph_filter);
-			break;
+			ext_ctrls->controls[index].value = ctrl.value;
 		}
 	}
 

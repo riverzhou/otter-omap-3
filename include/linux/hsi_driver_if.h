@@ -29,7 +29,7 @@
 /* The number of ports handled by the driver (MAX:2). Reducing this value
  * optimizes the driver memory footprint.
  */
-#define HSI_MAX_PORTS		2
+#define HSI_MAX_PORTS		1
 
 /* bit-field definition for allowed controller IDs and channels */
 #define ANY_HSI_CONTROLLER	-1
@@ -62,8 +62,6 @@ enum {
 	HSI_IOCTL_GET_TX,	/* Get HST configuration */
 	HSI_IOCTL_SW_RESET,	/* Force a HSI SW RESET */
 	HSI_IOCTL_GET_FIFO_OCCUPANCY, /* Get amount of words in RX FIFO */
-	HSI_IOCTL_SET_WAKE_RX_3WIRES_MODE, /* Enable RX wakeup 3-wires mode */
-	HSI_IOCTL_SET_WAKE_RX_4WIRES_MODE, /* Enable RX wakeup 4-wires mode */
 };
 
 /* Forward references */
@@ -89,27 +87,24 @@ struct hsr_ctx {
 	u32 channels;
 };
 
-struct hsi_port_ctx {
-	int port_number; /* Range [1, 2] */
+struct port_ctx {
 	u32 sys_mpu_enable[2];
 	struct hst_ctx hst;
 	struct hsr_ctx hsr;
-	const char *cawake_padconf_name;
-	int cawake_padconf_hsi_mode;
 };
 
 /**
- * struct hsi_ctrl_ctx - hsi controller regs context
+ * struct ctrl_ctx - hsi controller regs context
  * @sysconfig: keeps HSI_SYSCONFIG reg state
  * @gdd_gcr: keeps DMA_GCR reg state
  * @dll: keeps HSR_DLL state
  * @pctx: array of port context
  */
-struct hsi_ctrl_ctx {
+struct ctrl_ctx {
 	u32 sysconfig;
 	u32 gdd_gcr;
 	u32 dll;
-	struct hsi_port_ctx *pctx;
+	struct port_ctx *pctx;
 };
 /* END DPS */
 

@@ -227,18 +227,15 @@ static struct {
 	struct hdmi_audio_format audio_fmt;
 	struct hdmi_audio_dma audio_dma;
 	struct hdmi_core_audio_config audio_core_cfg;
-	struct omap_chip_id audio_must_use_tclk;
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
 	u32 notify_event_reg;
 	u32 cts_interval;
+	struct omap_chip_id audio_wa_chip_ids;
 	struct task_struct *wa_task;
 	u32 ack_payload;
-	bool audio_wa_started; /* HDMI WA guard*/
 #endif
 	u32 pixel_clock;
 } hdmi;
-
-bool first_hpd, dirty;
 
 static DEFINE_MUTEX(hdmi_mutex);
 
@@ -550,10 +547,37 @@ static void hdmi_core_init(enum hdmi_deep_mode deep_color,
 	}
 
 	/* info frame */
-	memset(avi, 0, sizeof(*avi));
+	avi->db1y_rgb_yuv422_yuv444 = 0;
+	avi->db1a_active_format_off_on = 0;
+	avi->db1b_no_vert_hori_verthori = 0;
+	avi->db1s_0_1_2 = 0;
+	avi->db2c_no_itu601_itu709_extented = 0;
+	avi->db2m_no_43_169 = 0;
+	avi->db2r_same_43_169_149 = 0;
+	avi->db3itc_no_yes = 0;
+	avi->db3ec_xvyuv601_xvyuv709 = 0;
+	avi->db3q_default_lr_fr = 0;
+	avi->db3sc_no_hori_vert_horivert = 0;
+	avi->db4vic_videocode = 0;
+	avi->db5pr_no_2_3_4_5_6_7_8_9_10 = 0;
+	avi->db6_7_lineendoftop = 0 ;
+	avi->db8_9_linestartofbottom = 0;
+	avi->db10_11_pixelendofleft = 0;
+	avi->db12_13_pixelstartofright = 0;
 
 	/* packet enable and repeat */
-	memset(r_p, 0, sizeof(*r_p));
+	r_p->AudioPacketED = 0;
+	r_p->AudioPacketRepeat = 0;
+	r_p->AVIInfoFrameED = 0;
+	r_p->AVIInfoFrameRepeat = 0;
+	r_p->GeneralcontrolPacketED = 0;
+	r_p->GeneralcontrolPacketRepeat = 0;
+	r_p->GenericPacketED = 0;
+	r_p->GenericPacketRepeat = 0;
+	r_p->MPEGInfoFrameED = 0;
+	r_p->MPEGInfoFrameRepeat = 0;
+	r_p->SPDInfoFrameED = 0;
+	r_p->SPDInfoFrameRepeat = 0;
 }
 
 static void hdmi_core_powerdown_disable(void)
@@ -653,7 +677,7 @@ static void hdmi_core_audio_config(u32 name,
 	u8 acr_en;
 
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
-	if (omap_chip_is(hdmi.audio_must_use_tclk))
+	if (omap_chip_is(hdmi.audio_wa_chip_ids))
 		acr_en = 0;
 	else
 		acr_en = 1;
@@ -663,19 +687,12 @@ static void hdmi_core_audio_config(u32 name,
 
 	/* CTS_MODE */
 	WR_REG_32(name, HDMI_CORE_AV__ACR_CTRL,
-		/*
-		 * MCLK_EN: use TCLK for ACR packets. For devices that use
-		 * the MCLK, this is the first part of the MCLK initialization
-		 */
+		/* MCLK_EN (0: Mclk is not used) */
 		(0x0 << 2) |
 		/* Set ACR packets while audio is not present */
 		(acr_en << 1) |
 		/* CTS Source Select (1:SW, 0:HW) */
 		(audio_cfg->cts_mode << 0));
-
-	/* For devices using MCLK, this completes its initialization. */
-	if (!omap_chip_is(hdmi.audio_must_use_tclk))
-		REG_FLD_MOD(name, HDMI_CORE_AV__ACR_CTRL, 1, 2, 2);
 
 	REG_FLD_MOD(name, HDMI_CORE_AV__FREQ_SVAL, 0, 2, 0);
 	REG_FLD_MOD(name, HDMI_CORE_AV__N_SVAL1, audio_cfg->n, 7, 0);
@@ -1063,16 +1080,34 @@ static void hdmi_w1_init(struct hdmi_video_timing *t_p,
 {
 	DBG("Enter HDMI_W1_GlobalInitVars()\n");
 
-	memset(t_p, 0, sizeof(*t_p));
+	t_p->horizontalBackPorch = 0;
+	t_p->horizontalFrontPorch = 0;
+	t_p->horizontalSyncPulse = 0;
+	t_p->verticalBackPorch = 0;
+	t_p->verticalFrontPorch = 0;
+	t_p->verticalSyncPulse = 0;
 
-	memset(f_p, 0, sizeof(*f_p));
 	f_p->packingMode = HDMI_PACK_10b_RGB_YUV444;
+	f_p->linePerPanel = 0;
+	f_p->pixelPerLine = 0;
 
-	memset(i_p, 0, sizeof(*i_p));
+	i_p->vSyncPolarity = 0;
+	i_p->hSyncPolarity = 0;
 
-	memset(pIrqVectorEnable, 0, sizeof(*pIrqVectorEnable));
+	i_p->interlacing = 0;
+	i_p->timingMode = 0; /* HDMI_TIMING_SLAVE */
+
+	pIrqVectorEnable->pllRecal = 0;
+	pIrqVectorEnable->pllUnlock = 0;
+	pIrqVectorEnable->pllLock = 0;
 	pIrqVectorEnable->phyDisconnect = 1;
 	pIrqVectorEnable->phyConnect = 1;
+	pIrqVectorEnable->phyShort5v = 0;
+	pIrqVectorEnable->videoEndFrame = 0;
+	pIrqVectorEnable->videoVsync = 0;
+	pIrqVectorEnable->fifoSampleRequest = 0;
+	pIrqVectorEnable->fifoOverflow = 0;
+	pIrqVectorEnable->fifoUnderflow = 0;
 	pIrqVectorEnable->ocpTimeOut = 1;
 	pIrqVectorEnable->core = 1;
 
@@ -1162,10 +1197,6 @@ int hdmi_w1_set_wait_phy_pwr(HDMI_PhyPwr_t val)
 	/* Set module to smart idle to allow DSS to go into OFF mode*/
 	if (val == HDMI_PHYPWRCMD_OFF)
 		REG_FLD_MOD(HDMI_WP, HDMI_WP_SYSCONFIG, 0x2, 3, 2);
-	/* Set module to "smart idle wakeup-capable" to allow immediately
-	   process interrupts like PHY_LINK_CONNECT_INTR */
-	else if (val == HDMI_PHYPWRCMD_TXON)
-		REG_FLD_MOD(HDMI_WP, HDMI_WP_SYSCONFIG, 0x3, 3, 2);
 
 	return 0;
 }
@@ -1371,7 +1402,7 @@ static int hdmi_configure_acr(u32 pclk)
 	cts = pclk*(n/128)*deep_color / (fs/10);
 
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
-	if (omap_chip_is(hdmi.audio_must_use_tclk)) {
+	if (omap_chip_is(hdmi.audio_wa_chip_ids)) {
 		if (pclk && deep_color) {
 			cts_interval_qtt = 1000000 /
 				((pclk * deep_color) / 100);
@@ -1395,7 +1426,7 @@ static int hdmi_configure_acr(u32 pclk)
 int hdmi_lib_acr_wa_send_event(u32 payload)
 {
 	long tout;
-	if (omap_chip_is(hdmi.audio_must_use_tclk)) {
+	if (omap_chip_is(hdmi.audio_wa_chip_ids)) {
 		if (hdmi.notify_event_reg == HDMI_NOTIFY_EVENT_REG) {
 			notify_send_event(SYS_M3, 0, HDMI_AUDIO_WA_EVENT,
 					payload, 0);
@@ -1427,23 +1458,11 @@ int hdmi_lib_acr_wa_send_event(u32 payload)
 }
 int hdmi_lib_start_acr_wa(void)
 {
-	int ret = 0;
-	if (!hdmi.audio_wa_started) {
-		ret = hdmi_lib_acr_wa_send_event(hdmi.cts_interval);
-		if (!ret)
-			hdmi.audio_wa_started = true;
-	}
-	return ret;
+	return hdmi_lib_acr_wa_send_event(hdmi.cts_interval);
 }
 int hdmi_lib_stop_acr_wa(void)
 {
-	int ret = 0;
-	if (hdmi.audio_wa_started) {
-		ret = hdmi_lib_acr_wa_send_event(0);
-		if (!ret)
-			hdmi.audio_wa_started = false;
-	}
-	return ret;
+	return hdmi_lib_acr_wa_send_event(0);
 }
 
 void hdmi_notify_event_ack_func(u16 proc_id, u16 line_id, u32 event_id,
@@ -1717,7 +1736,7 @@ int hdmi_lib_enable(struct hdmi_config *cfg)
 	REG_FLD_MOD(av_name, HDMI_CORE_AV__HDMI_CTRL, cfg->hdmi_dvi, 0, 0);
 
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
-	if (omap_chip_is(hdmi.audio_must_use_tclk)) {
+	if (omap_chip_is(hdmi.audio_wa_chip_ids)) {
 		if (hdmi.notify_event_reg == HDMI_NOTIFY_EVENT_NOTREG) {
 			r = ipc_register_notifier(&hdmi_syslink_notify_block);
 			hdmi.notify_event_reg = HDMI_NOTIFY_WAIT_FOR_IPC;
@@ -1756,11 +1775,10 @@ int hdmi_lib_init(void)
 
 	hdmi.base_core = hdmi.base_wp + 0x400;
 	hdmi.base_core_av = hdmi.base_wp + 0x900;
-	hdmi.audio_must_use_tclk.oc = CHIP_IS_OMAP4430ES2 |
-			CHIP_IS_OMAP4430ES2_1 | CHIP_IS_OMAP4430ES2_2;
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
 	hdmi.notify_event_reg = HDMI_NOTIFY_EVENT_NOTREG;
-	hdmi.audio_wa_started = false;
+	hdmi.audio_wa_chip_ids.oc = CHIP_IS_OMAP4430ES2 |
+			CHIP_IS_OMAP4430ES2_1 | CHIP_IS_OMAP4430ES2_2;
 #endif
 
 	INIT_LIST_HEAD(&hdmi.notifier_head);
@@ -1771,7 +1789,7 @@ int hdmi_lib_init(void)
 void hdmi_lib_exit(void){
 	iounmap(hdmi.base_wp);
 #ifdef CONFIG_OMAP_HDMI_AUDIO_WA
-	if (omap_chip_is(hdmi.audio_must_use_tclk))
+	if (omap_chip_is(hdmi.audio_wa_chip_ids))
 		ipc_unregister_notifier(&hdmi_syslink_notify_block);
 #endif
 }
@@ -1779,15 +1797,23 @@ void hdmi_lib_exit(void){
 int hdmi_set_irqs(int i)
 {
 	u32 r = 0 , hpd = 0;
-	struct hdmi_irq_vector pIrqVectorEnable = {
-		.pllUnlock = 1,
-		.pllLock = 1,
-		.phyDisconnect = 1,
-		.phyConnect = 1,
-		.core = 1,
-	};
+	struct hdmi_irq_vector pIrqVectorEnable;
 
 	if (!i) {
+		pIrqVectorEnable.pllRecal = 0;
+		pIrqVectorEnable.phyShort5v = 0;
+		pIrqVectorEnable.videoEndFrame = 0;
+		pIrqVectorEnable.videoVsync = 0;
+		pIrqVectorEnable.fifoSampleRequest = 0;
+		pIrqVectorEnable.fifoOverflow = 0;
+		pIrqVectorEnable.fifoUnderflow = 0;
+		pIrqVectorEnable.ocpTimeOut = 0;
+		pIrqVectorEnable.pllUnlock = 1;
+		pIrqVectorEnable.pllLock = 1;
+		pIrqVectorEnable.phyDisconnect = 1;
+		pIrqVectorEnable.phyConnect = 1;
+		pIrqVectorEnable.core = 1;
+
 		hdmi_w1_irq_enable(&pIrqVectorEnable);
 
 		r = hdmi_read_reg(HDMI_WP, HDMI_WP_IRQENABLE_SET);
@@ -1810,6 +1836,7 @@ void HDMI_W1_HPD_handler(int *r)
 {
 	u32 val, set = 0, hpd_intr = 0, core_state = 0;
 	u32 time_in_ms, intr2 = 0, intr3 = 0;
+	static bool first_hpd, dirty;
 	static ktime_t ts_hpd_low, ts_hpd_high;
 
 	//mdelay(30);
@@ -2038,7 +2065,6 @@ int hdmi_w1_stop_audio_transfer(u32 instanceName)
 	hdmi_w1_audio_stop();
 	/* if audio is not used, switch to smart-idle & wakeup capable*/
 	REG_FLD_MOD(HDMI_WP, HDMI_WP_SYSCONFIG, 0x3, 3, 2);
-	printk(KERN_INFO "Stop audio transfer...\n");
 	return 0;
 }
 
@@ -2088,8 +2114,6 @@ void hdmi_notify_pwrchange(int state)
 {
 	struct hdmi_notifier *cur, *next;
 
-	printk(KERN_INFO "<%s> Notify Audio Powerchange - %d\n",
-	       __func__, state);
 	list_for_each_entry_safe(cur, next, &hdmi.notifier_head, list) {
 		if (cur->pwrchange_notifier)
 			cur->pwrchange_notifier(state, cur->private_data);

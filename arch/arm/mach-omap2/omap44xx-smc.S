@@ -15,21 +15,20 @@
 /*
  * This is common routine to manage secure monitor API
  * used to modify the PL310 secure registers.
- * 'r0','r1' contains the values to be modified and 'r12' contains
+ * 'r0' contains the value to be modified and 'r12' contains
  * the monitor API number. It uses few CPU registers
  * internally and hence they need be backed up including
  * link register "lr".
- * Function signature : void omap_smc1(u32 fn, u32 r0, u32 r1)
+ * Function signature : void omap_smc1(u32 fn, u32 arg)
  */
 
 ENTRY(omap_smc1)
-	stmfd   sp!, {r3-r12, lr}
+	stmfd   sp!, {r2-r12, lr}
 	mov	r12, r0
-	mov	r0, r1
-	mov	r1, r2
+	mov 	r0, r1
 	dsb
 	smc	#0
-	ldmfd   sp!, {r3-r12, pc}
+	ldmfd   sp!, {r2-r12, pc}
 END(omap_smc1)
 
 /*

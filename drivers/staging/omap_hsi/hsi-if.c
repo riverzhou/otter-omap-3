@@ -219,11 +219,11 @@ void if_hsi_send_break(int ch)
 	hsi_ioctl(channel->dev, HSI_IOCTL_SEND_BREAK, NULL);
 }
 
-void if_hsi_flush_rx(int ch, size_t *nb_flushed_frames)
+void if_hsi_flush_rx(int ch)
 {
 	struct if_hsi_channel *channel;
 	channel = &hsi_iface.channels[ch];
-	hsi_ioctl(channel->dev, HSI_IOCTL_FLUSH_RX, nb_flushed_frames);
+	hsi_ioctl(channel->dev, HSI_IOCTL_FLUSH_RX, NULL);
 }
 
 void if_hsi_flush_ch(int ch)
@@ -233,42 +233,26 @@ void if_hsi_flush_ch(int ch)
 	channel = &hsi_iface.channels[ch];
 }
 
-void if_hsi_flush_tx(int ch, size_t *nb_flushed_frames)
+void if_hsi_flush_tx(int ch)
 {
 	struct if_hsi_channel *channel;
 	channel = &hsi_iface.channels[ch];
-	hsi_ioctl(channel->dev, HSI_IOCTL_FLUSH_TX, nb_flushed_frames);
+	hsi_ioctl(channel->dev, HSI_IOCTL_FLUSH_TX, NULL);
 }
 
-void if_hsi_get_acwakeline(int ch, unsigned int *state)
+void if_hsi_get_wakeline(int ch, unsigned int *state)
 {
 	struct if_hsi_channel *channel;
 	channel = &hsi_iface.channels[ch];
 	hsi_ioctl(channel->dev, HSI_IOCTL_GET_ACWAKE, state);
 }
 
-void if_hsi_set_acwakeline(int ch, unsigned int state)
+void if_hsi_set_wakeline(int ch, unsigned int state)
 {
 	struct if_hsi_channel *channel;
 	channel = &hsi_iface.channels[ch];
 	hsi_ioctl(channel->dev,
 		  state ? HSI_IOCTL_ACWAKE_UP : HSI_IOCTL_ACWAKE_DOWN, NULL);
-}
-
-void if_hsi_get_cawakeline(int ch, unsigned int *state)
-{
-	struct if_hsi_channel *channel;
-	channel = &hsi_iface.channels[ch];
-	hsi_ioctl(channel->dev, HSI_IOCTL_GET_CAWAKE, state);
-}
-
-void if_hsi_set_wake_rx_3wires_mode(int ch, unsigned int state)
-{
-	struct if_hsi_channel *channel;
-	channel = &hsi_iface.channels[ch];
-	hsi_ioctl(channel->dev,
-		  state ? HSI_IOCTL_SET_WAKE_RX_3WIRES_MODE :
-			  HSI_IOCTL_SET_WAKE_RX_4WIRES_MODE, NULL);
 }
 
 int if_hsi_set_rx(int ch, struct hsi_rx_config *cfg)
@@ -672,7 +656,7 @@ int __devexit if_hsi_exit(void)
 	for (i = 0; i < HSI_MAX_CHAR_DEVS; i++) {
 		channel = &hsi_iface.channels[i];
 		if (channel->opened) {
-			if_hsi_set_acwakeline(i, HSI_IOCTL_ACWAKE_DOWN);
+			if_hsi_set_wakeline(i, HSI_IOCTL_ACWAKE_DOWN);
 			if_hsi_closechannel(channel);
 		}
 	}

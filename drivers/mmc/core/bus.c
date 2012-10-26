@@ -127,6 +127,12 @@ static int mmc_bus_suspend(struct device *dev, pm_message_t state)
 	return ret;
 }
 
+static int mmc_bus_pm_suspend(struct device *dev)
+{
+	pm_message_t state = { .event = PM_EVENT_SUSPEND, };
+	return mmc_bus_suspend(dev, state);
+}
+
 static int mmc_bus_resume(struct device *dev)
 {
 	struct mmc_driver *drv = to_mmc_driver(dev->driver);
@@ -160,6 +166,16 @@ static int mmc_runtime_idle(struct device *dev)
 }
 
 static const struct dev_pm_ops mmc_bus_pm_ops = {
+	/* Classic suspend/resume is needed here, otherwise core power
+	 * driver will ignore mmc bus' deprecated callbacks if .pm member
+	 * is present.
+	 *
+	 * We need these callbacks to freeze queue handling when driver
+	 * is suspended, among other housekeeping tasks.
+	 */
+	.suspend		= mmc_bus_pm_suspend,
+	.resume			= mmc_bus_resume,
+	/* Runtime PM handling */
 	.runtime_suspend	= mmc_runtime_suspend,
 	.runtime_resume		= mmc_runtime_resume,
 	.runtime_idle		= mmc_runtime_idle,

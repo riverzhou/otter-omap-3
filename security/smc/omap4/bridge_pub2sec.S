@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2011 Trusted Logic S.A.
+ * Copyright (c) 2006-2010 Trusted Logic S.A.
  * All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or
@@ -25,8 +25,6 @@
 
 #define PUB2SEC_NOCST        0xFF
 #define SMICODEPUB_NEWTASK   0x00
-
-#define NO_CRITICAL_TASK     0xFFFFFFFF
 
 /*
  * RPC status:
@@ -80,7 +78,7 @@ label_smc:
 	dsb
 	dmb
 
-#ifdef CONFIG_BENCH_SECURE_CYCLE
+#ifdef CONFIG_SMC_BENCH_SECURE_CYCLE
 	/* Come from Non Secure: activate counter 1 (write to 0 are ignored) */
 	mov	r4, #0x00000002
 
@@ -98,21 +96,7 @@ label_smc:
 	b	service_end
 	nop
 
-	/*
-	 * Directly jump back to secure if a critical section
-	 * needs to be completed prior to executing our service
-	 *
-	 * r5 = current critical task ID, 0xFFFFFFFF if none
-	 * r6 = current task ID
-	 */
-	cmp	r5, #NO_CRITICAL_TASK
-	beq	no_crit_task_override
-	cmp	r5, r6
-	beq	no_crit_task_override
-	mov	r12, #SMICODEPUB_IRQ_END
-	b	label_smc
-
-#ifdef CONFIG_BENCH_SECURE_CYCLE
+#ifdef CONFIG_SMC_BENCH_SECURE_CYCLE
 	/* Come from Secure: activate counter 0 (write to 0 are ignored) */
 	mov	r4, #0x00000001
 
@@ -126,7 +110,6 @@ label_smc:
 	mcr	p15, 0x0, r4, c9, c12, 2
 #endif
 
-no_crit_task_override:
 	INVALIDATE_BTB
 	ldr	r8, =g_secure_task_id
 	str	r6, [r8]
@@ -140,7 +123,7 @@ no_crit_task_override:
 service_end:
 
 schedule_secure_world_exit:
-#ifdef CONFIG_BENCH_SECURE_CYCLE
+#ifdef CONFIG_SMC_BENCH_SECURE_CYCLE
 	/* Come from Secure: activate counter 0 (write to 0 are ignored) */
 	mov	r4, #0x00000001
 
@@ -162,7 +145,7 @@ schedule_secure_world_exit:
 rpc_handler:
 	.global rpc_handler
 
-#ifdef CONFIG_BENCH_SECURE_CYCLE
+#ifdef CONFIG_SMC_BENCH_SECURE_CYCLE
 	/* Come from Secure: activate counter 0 (write to 0 are ignored) */
 	mov	r4, #0x00000001
 
@@ -195,10 +178,10 @@ rpc_handler:
 	/* Restore registers */
 	pop	{r4-r12, pc}
 
-#ifdef CONFIG_BENCH_SECURE_CYCLE
+#ifdef CONFIG_SMC_BENCH_SECURE_CYCLE
 
-setup_counters:
-	.global setup_counters
+setupCounters:
+	.global setupCounters
 
 	push	{r14}
 
@@ -212,8 +195,8 @@ setup_counters:
 
 	pop	{pc}
 
-run_code_speed:
-	.global run_code_speed
+runCodeSpeed:
+	.global runCodeSpeed
 
 	push	{r14}
 
@@ -221,18 +204,18 @@ run_code_speed:
 	mov	r2, #0
 	mcr	p15, 0, r2, c9, c13, 0
 
-run_code_speed_loop:
+runCodeSpeed_loop:
 	sub	r0, r0, #1
 	cmp	r0, #0
-	bne	run_code_speed_loop
+	bne	runCodeSpeed_loop
 
 	/* Read cycle counter */
 	mrc	p15, 0, r0, c9, c13, 0
 
 	pop	{pc}
 
-run_data_speed:
-	.global run_data_speed
+runDataSpeed:
+	.global runDataSpeed
 
 	push	{r14}
 
@@ -240,11 +223,11 @@ run_data_speed:
 	mov	r2, #0
 	mcr	p15, 0, r2, c9, c13, 0
 
-run_data_speed_loop:
+runDataSpeed_loop:
 	sub	r0, r0, #1
 	ldr	r2, [r1]
 	cmp	r0, #0
-	bne	run_data_speed_loop
+	bne	runDataSpeed_loop
 
 	/* read cycle counter */
 	mrc	p15, 0, r0, c9, c13, 0
@@ -252,3 +235,9 @@ run_data_speed_loop:
 	pop	{pc}
 
 #endif
+
+read_mpidr:
+	.global read_mpidr
+	mrc   p15, 0, r0, c0, c0, 5
+	bx   lr
+

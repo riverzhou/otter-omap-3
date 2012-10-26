@@ -165,8 +165,6 @@ extern u32 abe_base_address_pingpong[MAX_PINGPONG_BUFFERS];
 extern u32 abe_size_pingpong;
 /* number of ping/pong buffer being used */
 extern u32 abe_nb_pingpong;
-/* Variable to switch path for headset or handsfree at OPP25*/
-extern u32 abe_mcpdm_path;
 
 
 #endif/* _ABE_REF_H_ */

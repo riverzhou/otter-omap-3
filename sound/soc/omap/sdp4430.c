@@ -37,7 +37,6 @@
 #include <plat/hardware.h>
 #include <plat/mux.h>
 #include <plat/mcbsp.h>
-#include <plat/clock.h>
 
 #include "omap-mcpdm.h"
 #include "omap-abe.h"
@@ -114,20 +113,12 @@ static int sdp4430_mcpdm_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
-	struct clk *clock;
 	int clk_id, freq;
 	int ret = 0;
 
 	if (twl6040_power_mode) {
 		clk_id = TWL6040_SYSCLK_SEL_HPPLL;
-		/* SDP44xx shares twl6040 MCLK with omap SYSCLK */
-		clock = clk_get(NULL, "sys_clkin_ck");
-		if (IS_ERR(clock)) {
-			ret = PTR_ERR(clock);
-			printk(KERN_ERR "failed to obtain sys_clkin_ck\n");
-			return ret;
-		}
-		freq = clk_get_rate(clock);
+		freq = 38400000;
 		/*
 		 * TWL6040 requires MCLK to be active as long as
 		 * high-performance mode is in use. Glitch-free mux
@@ -140,13 +131,7 @@ static int sdp4430_mcpdm_hw_params(struct snd_pcm_substream *substream,
 		}
 	} else {
 		clk_id = TWL6040_SYSCLK_SEL_LPPLL;
-		clock = clk_get(NULL, "sys_32k_ck");
-		if (IS_ERR(clock)) {
-			ret = PTR_ERR(clock);
-			printk(KERN_ERR "failed to obtain sys_32k_ck\n");
-			return ret;
-		}
-		freq = clk_get_rate(clock);;
+		freq = 32768;
 	}
 
 	/* set the codec mclk */
@@ -422,7 +407,7 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"AFMR", NULL, "Aux/FM Stereo In"},
 };
 
-static int sdp4430_twl6040_init_hs(struct snd_soc_pcm_runtime *rtd)
+static int sdp4430_twl6040_init(struct snd_soc_pcm_runtime *rtd)
 {
 	struct snd_soc_codec *codec = rtd->codec;
 	int ret;
@@ -471,23 +456,25 @@ static int sdp4430_twl6040_init_hs(struct snd_soc_pcm_runtime *rtd)
 	ret = snd_soc_jack_add_pins(&hs_jack, ARRAY_SIZE(hs_jack_pins),
 				hs_jack_pins);
 
-	if (machine_is_omap_4430sdp() || machine_is_omap_tabletblaze())
+	if (machine_is_omap_4430sdp())
 		twl6040_hs_jack_detect(codec, &hs_jack, SND_JACK_HEADSET);
 	else
 		snd_soc_jack_report(&hs_jack, SND_JACK_HEADSET, SND_JACK_HEADSET);
 
-	/* don't wait before switching of HS power */
-	rtd->pmdown_time = 0;
+	/* wait 500 ms before switching of HS power */
+	rtd->pmdown_time = 500;
 
 	return ret;
 }
 
+#if 0
 static int sdp4430_twl6040_init_hf(struct snd_soc_pcm_runtime *rtd)
 {
-	/* don't wait before switching of HF power */
-	rtd->pmdown_time = 0;
+	/* wait 500 ms before switching of HF power */
+	rtd->pmdown_time = 500;
 	return 0;
 }
+#endif
 
 /* TODO: make this a separate BT CODEC driver or DUMMY */
 static struct snd_soc_dai_driver dai[] = {
@@ -773,7 +760,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.codec_name = "twl6040-codec",
 
 		.no_pcm = 1, /* don't create ALSA pcm for this */
-		.init = sdp4430_twl6040_init_hs,
+		.init = sdp4430_twl6040_init,
 		.ops = &sdp4430_mcpdm_ops,
 		.be_id = OMAP_ABE_DAI_PDM_DL1,
 		.ignore_suspend = 1,
@@ -808,7 +795,7 @@ static struct snd_soc_dai_link sdp4430_dai[] = {
 		.codec_name = "twl6040-codec",
 
 		.no_pcm = 1, /* don't create ALSA pcm for this */
-		.init = sdp4430_twl6040_init_hf,
+//		.init = sdp4430_twl6040_init_hf,
 		.ops = &sdp4430_mcpdm_ops,
 		.be_id = OMAP_ABE_DAI_PDM_DL2,
 		.ignore_suspend = 1,
@@ -969,9 +956,8 @@ static int __init sdp4430_soc_init(void)
 {
 	int ret = 0;
 
-	if (!machine_is_omap_4430sdp() &&
-		!machine_is_omap_tabletblaze()) {
-		pr_debug("Not SDP4430 or BlazeTablet\n");
+	if (!machine_is_omap_4430sdp() && !machine_is_omap4_panda()) {
+		pr_debug("Not SDP4430 or PandaBoard!\n");
 		return -ENODEV;
 	}
 	printk(KERN_INFO "SDP4430 SoC init\n");

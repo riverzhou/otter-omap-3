@@ -101,7 +101,8 @@ extern void omap_serial_init_port(int port,
 extern int omap_uart_can_sleep(void);
 extern void omap_uart_check_wakeup(void);
 extern void omap_uart_prepare_suspend(void);
-extern void omap_uart_resume_idle(void);
+extern void omap_uart_prepare_idle(int num);
+extern void omap_uart_resume_idle(int num);
 extern void omap_uart_enable_irqs(int enable);
 #endif
 

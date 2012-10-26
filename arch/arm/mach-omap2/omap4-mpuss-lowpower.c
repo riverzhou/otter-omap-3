@@ -373,6 +373,81 @@ static void save_gic(void)
 	reg_value |= (SAR_BACKUP_STATUS_GIC_CPU0 | SAR_BACKUP_STATUS_GIC_CPU1);
 	writel(reg_value, sar_bank3_base + SAR_BACKUP_STATUS_OFFSET);
 }
+/*
+ * Save GIC context in SAR RAM. Restore is done by ROM code
+ * GIC is lost only when MPU hits OSWR or OFF. It consist
+ * of a distributor and a per-cpu interface module
+ */
+static void restore_gic(void)
+{
+	u32 reg_index, reg_value;
+
+	reg_value = readl(sar_bank3_base + ICDISER_CPU0_OFFSET);
+	writel(reg_value, gic_dist_base_addr + GIC_DIST_ENABLE_SET);
+
+	for (reg_index = 0; reg_index < max_spi_reg; reg_index++) {
+		reg_value = readl(sar_bank3_base + ICDISER_SPI_OFFSET
+							+ 4 * reg_index);
+		writel(reg_value, gic_dist_base_addr + 0x104 + 4 * reg_index);
+	}
+
+	/*
+	 * Interrupt Priority Registers
+	 * Secure sw accesses, last 5 bits of the 8 bits (bit[7:3] are used)
+	 * Non-Secure sw accesses, last 4 bits (i.e. bits[7:4] are used)
+	 * But the Secure Bits[7:3] are shifted by 1 in Non-Secure access.
+	 * Secure (bits[7:3] << 1)== Non Secure bits[7:4]
+	 *
+	 * SGI - backup SGI
+	 */
+	for (reg_index = 0; reg_index < 3; reg_index++) {
+		/*
+		 * Save the priority bits of the Interrupts
+		 */
+		reg_value = readl(sar_bank3_base + ICDIPR_SFI_CPU0_OFFSET
+							+ 4 * reg_index);
+		writel(reg_value, gic_dist_base_addr + GIC_DIST_PRI
+							+ 4 * reg_index);
+	}
+	/*
+	 * PPI -  backup PPIs
+	 */
+	reg_value = readl(sar_bank3_base + ICDIPR_PPI_CPU0_OFFSET);
+	writel(reg_value, gic_dist_base_addr + GIC_DIST_PRI + 0x1c);
+
+	/*
+	 * SPI - backup SPI
+	 * Interrupt priority regs - 4 interrupts/register
+	 */
+	for (reg_index = 0; reg_index < (max_spi_irq / 4); reg_index++) {
+		reg_value = readl(sar_bank3_base + ICDIPR_SPI_OFFSET +
+							4 * reg_index);
+		writel(reg_value, gic_dist_base_addr +
+				(GIC_DIST_PRI + 0x20) + 4 * reg_index);
+	}
+
+	/*
+	 * Interrupt SPI TARGET - 4 interrupts/register
+	 */
+	for (reg_index = 0; reg_index < (max_spi_irq / 4); reg_index++) {
+		reg_value = readl(sar_bank3_base + ICDIPTR_SPI_OFFSET +
+							4 * reg_index);
+		writel(reg_value, gic_dist_base_addr +
+				(GIC_DIST_TARGET + 0x20) + 4 * reg_index);
+	}
+
+	/*
+	 * Interrupt SPI Congigeration - 16 interrupts/register
+	 */
+	for (reg_index = 0; reg_index < (max_spi_irq / 16); reg_index++) {
+		reg_value = readl(sar_bank3_base + ICDICFR_OFFSET +
+							4 * reg_index);
+		writel(reg_value, gic_dist_base_addr +
+				(GIC_DIST_CONFIG + 0x08) + 4 * reg_index);
+
+	}
+
+}
 
 /*
  * The CPU interface is per CPU
@@ -389,8 +464,7 @@ static inline void enable_gic_cpu_interface(void)
  */
 static inline void enable_gic_distributor(void)
 {
-	if(!(readl(gic_dist_base_addr + GIC_DIST_CTRL) & 0x1))
-		writel(0x1, gic_dist_base_addr + GIC_DIST_CTRL);
+	writel(0x1, gic_dist_base_addr + GIC_DIST_CTRL);
 	if (omap_type() == OMAP2_DEVICE_TYPE_GP)
 		writel(0x0, sar_bank3_base + SAR_BACKUP_STATUS_OFFSET);
 }
@@ -597,24 +671,26 @@ void omap4_enter_lowpower(unsigned int cpu, unsigned int power_state)
 	 * GIC lost during MPU OFF and OSWR
 	 */
 	pwrdm_clear_all_prev_pwrst(mpuss_pd);
-	if (omap4_device_off_read_next_state()) {
-		if (omap_type() != OMAP2_DEVICE_TYPE_GP) {
-			/* l3_main inst clock must be enabled for
-			 * a save ram operation
-			 */
-			if (!l3_main_3_ick->usecount) {
-				inst_clk_enab = 1;
-				clk_enable(l3_main_3_ick);
-			}
-			save_secure_all();
-			if (inst_clk_enab == 1)
-				clk_disable(l3_main_3_ick);
-			save_ivahd_tesla_regs();
-			save_l3instr_regs();
-		} else {
-			save_gic();
-			omap4_wakeupgen_save();
+	if (omap4_device_off_read_next_state() &&
+			 (omap_type() != OMAP2_DEVICE_TYPE_GP)) {
+		/* FIXME: Check if this can be optimised */
+
+		/* l3_main inst clock must be enabled for
+		 * a save ram operation
+		 */
+		if (!l3_main_3_ick->usecount) {
+			inst_clk_enab = 1;
+			clk_enable(l3_main_3_ick);
 		}
+
+		save_secure_all();
+
+		if (inst_clk_enab == 1)
+			clk_disable(l3_main_3_ick);
+
+		save_ivahd_tesla_regs();
+		save_l3instr_regs();
+
 		save_state = 3;
 		goto cpu_prepare;
 	}
@@ -697,6 +773,7 @@ cpu_prepare:
 	} else {
 		pwrdm_set_next_pwrst(cpu0_pwrdm, PWRDM_POWER_ON);
 		pwrdm_set_next_pwrst(mpuss_pd, PWRDM_POWER_ON);
+		//omap4_secure_dispatcher(0x21, 4, 0, 0, 0, 0, 0);
 	}
 
 	/*
@@ -707,22 +784,6 @@ cpu_prepare:
 		restore_mmu_table_entry();
 		restore_local_timers(wakeup_cpu);
 	}
-	/*
-	 * GIC distributor control register has changed between
-	 * CortexA9 r1pX and r2pX. The Control Register secure
-	 * banked version is now composed of 2 bits:
-	 * bit 0 == Secure Enable
-	 * bit 1 == Non-Secure Enable
-	 * The Non-Secure banked register has not changed
-	 * Because the ROM Code is based on the r1pX GIC, the CPU1
-	 * GIC restoration will cause a problem to CPU0 Non-Secure SW.
-	 * The workaround must be:
-	 * 1) Before doing the CPU1 wakeup, CPU0 must disable
-	 * the GIC distributor
-	 * 2) CPU1 must re-enable the GIC distributor on
-	 * it's wakeup path.
-	 */
-	enable_gic_distributor();
 
 	/*
 	 * Check MPUSS previous power state and enable
@@ -743,10 +804,13 @@ cpu_prepare:
 		 * Enable GIC distributor
 		 */
 		if (!wakeup_cpu) {
-			if (cpu_is_omap446x())
-				disable_gd = 1;
+			if ((omap_type() == OMAP2_DEVICE_TYPE_GP)
+					&& omap4_device_off_read_prev_state()) {
+				restore_gic();
+				omap4_wakeupgen_restore();
+			}
+			enable_gic_distributor();
 			if (omap_type() != OMAP2_DEVICE_TYPE_GP) {
-				omap4_secure_dispatcher(0x21, 4, 0, 0, 0, 0, 0);
 				restore_ivahd_tesla_regs();
 				restore_l3instr_regs();
 			}
@@ -764,8 +828,6 @@ cpu_prepare:
 
 void __init omap4_mpuss_init(void)
 {
-	u32 reg;
-
 	/*
 	 * Find out how many interrupts are supported.
 	 * The GIC only supports up to 1020 interrupt sources.
@@ -802,15 +864,7 @@ void __init omap4_mpuss_init(void)
 	} else {
 		writel(0x0, sar_ram_base + OMAP_TYPE_OFFSET);
 	}
-#ifdef CONFIG_CACHE_L2X0
-	if (cpu_is_omap446x()) {
-		reg = readl_relaxed(l2cache_base + 0x900);
-		writel_relaxed(reg, sar_ram_base + L2X0_LOCKDOWN_OFFSET0);
-	} else {
-		writel_relaxed(0x0, sar_ram_base + L2X0_LOCKDOWN_OFFSET0);
-	}
 
-#endif
 }
 
 #else

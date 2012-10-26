@@ -564,53 +564,6 @@ static ssize_t gpio_active_low_store(struct device *dev,
 static const DEVICE_ATTR(active_low, 0644,
 		gpio_active_low_show, gpio_active_low_store);
 
-static ssize_t gpio_irq_wake_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t size)
-{
-	const struct gpio_desc  *desc = dev_get_drvdata(dev);
-	unsigned		gpio = desc - gpio_desc;
-	ssize_t			status;
-
-	mutex_lock(&sysfs_lock);
-
-	if (!test_bit(FLAG_EXPORT, &desc->flags))
-		status = -EIO;
-	else if (sysfs_streq(buf, "enable") || sysfs_streq(buf, "1"))
-		status = enable_irq_wake(gpio_to_irq(gpio));
-	else if (sysfs_streq(buf, "disable") || sysfs_streq(buf, "0"))
-		status = disable_irq_wake(gpio_to_irq(gpio));
-	else
-		status = -EINVAL;
-
-	mutex_unlock(&sysfs_lock);
-
-	return status ? : size;
-}
-
-static ssize_t gpio_irq_wake_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	const struct gpio_desc	*desc = dev_get_drvdata(dev);
-	unsigned		gpio = desc - gpio_desc;
-	int			irq = gpio_to_irq(gpio);
-	struct irq_desc		*idesc = irq_to_desc(irq);
-	ssize_t			status;
-
-	mutex_lock(&sysfs_lock);
-
-	status = sprintf(buf, " Wakeup %s\n",
-		(idesc->status & IRQ_WAKEUP)
-			? " enable" : "disable");
-
-	mutex_unlock(&sysfs_lock);
-
-	return status;
-}
-
-
-static const DEVICE_ATTR(irq_wake, 0644,
-		gpio_irq_wake_show, gpio_irq_wake_store);
-
 static const struct attribute *gpio_attrs[] = {
 	&dev_attr_value.attr,
 	&dev_attr_active_low.attr,
@@ -812,13 +765,9 @@ int gpio_export(unsigned gpio, bool direction_may_change)
 			if (!status && gpio_to_irq(gpio) >= 0
 					&& (direction_may_change
 						|| !test_bit(FLAG_IS_OUT,
-							&desc->flags))) {
+							&desc->flags)))
 				status = device_create_file(dev,
 						&dev_attr_edge);
-				if (!status)
-					status = device_create_file(dev,
-							&dev_attr_irq_wake);
-			}
 
 			if (status != 0)
 				device_unregister(dev);

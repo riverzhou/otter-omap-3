@@ -301,7 +301,7 @@ static enum omap_color_mode v4l2_pix_to_dss_color(struct v4l2_pix_format *pix)
 	case V4L2_PIX_FMT_RGB32:
 		return OMAP_DSS_COLOR_ARGB32;
 	case V4L2_PIX_FMT_BGR32:
-		return OMAP_DSS_COLOR_RGBX24;
+		return OMAP_DSS_COLOR_RGBX32;
 
 	default:
 		return -EINVAL;
@@ -386,21 +386,10 @@ static void set_default_window(struct s3d_ovl_device *dev,
 				struct v4l2_window *win)
 {
 	struct omap_video_timings *timings = &dev->cur_disp->panel.timings;
-
-	dev->fbuf.fmt.width = timings->x_res;
-	dev->fbuf.fmt.height = timings->y_res;
-
-	win->w.top = 0;
-	win->w.left = 0;
 	win->w.width = timings->x_res;
 	win->w.height = timings->y_res;
-
-	if (dev->cur_disp->panel.s3d_info.type == S3D_DISP_OVERUNDER) {
-		win->w.height = (win->w.height -
-			dev->cur_disp->panel.s3d_info.gap) / 2;
-	} else if (dev->cur_disp->panel.s3d_info.type == S3D_DISP_SIDEBYSIDE)
-		win->w.width = (win->w.width -
-			dev->cur_disp->panel.s3d_info.gap) / 2;
+	win->w.top = 0;
+	win->w.left = 0;
 }
 
 static int calculate_offset(const struct v4l2_rect *crop,
@@ -735,8 +724,6 @@ static int change_display(struct s3d_ovl_device *dev,
 
 	omap_dss_put_device(dev->cur_disp);
 	dev->cur_disp = display;
-	set_default_window(dev, &dev->win);
-
 	return 0;
 }
 
@@ -954,7 +941,6 @@ static int fill_dst(struct s3d_ovl_device *dev,
 			unsigned int dst_width,
 			unsigned int dst_height)
 {
-	struct omap_video_timings *timings = &dev->cur_disp->panel.timings;
 	unsigned int pos_x = dev->win.w.left, pos_y = dev->win.w.top;
 
 	info->r_pos_x = pos_x;
@@ -986,15 +972,15 @@ static int fill_dst(struct s3d_ovl_device *dev,
 		break;
 	case S3D_DISP_OVERUNDER:
 		info->dst_w = dst_width;
-        info->dst_h = dst_height;
-		pos_y += (timings->y_res + disp_info->gap) / 2;
+		info->dst_h = (dst_height - disp_info->gap) / 2;
+		pos_y += (dst_height + disp_info->gap) / 2;
 		info->disp_ovls = 2;
 		info->a_view_per_ovl = true;
 		break;
 	case S3D_DISP_SIDEBYSIDE:
-        info->dst_w = dst_width;
+		info->dst_w = (dst_width - disp_info->gap) / 2;
 		info->dst_h = dst_height;
-		pos_x += (timings->x_res + disp_info->gap) / 2;
+		pos_x += (dst_width + disp_info->gap) / 2;
 		info->disp_ovls = 2;
 		info->a_view_per_ovl = true;
 		break;
@@ -1350,14 +1336,7 @@ static int conf_overlay_info(const struct s3d_ovl_device *dev,
 	info.width = ovl->src.w;
 	info.height = ovl->src.h;
 	info.color_mode = ovl->queue->color_mode;
-	/*
-	 * DSS mirroring is left-to-right, while ovl->vflip is top-down,
-	 * so adjust rotation by 180 degrees
-	 */
 	info.mirror = ovl->vflip;
-	if (ovl->vflip)
-		info.rotation ^= OMAP_DSS_ROT_180;
-
 	info.pos_x = ovl->dst.x;
 	info.pos_y = ovl->dst.y;
 	info.out_width = ovl->dst.w;
@@ -1642,18 +1621,12 @@ static int change_s3d_mode(struct s3d_ovl_device *dev,
 		return -EFAULT;
 	}
 	if (disp->driver && disp->driver->enable_s3d) {
-		struct omap_video_timings timings = disp->panel.timings;
-		r = disp->driver->enable_s3d(disp, enable_s3d);
+		r = disp->driver->enable_s3d(dev->cur_disp, enable_s3d);
 		if (enable_s3d && r) {
 			S3DWARN("failed to enable S3D display\n");
 			/*fallback to anaglyph mode*/
 			mode = dev->s3d_mode = V4L2_S3D_MODE_ANAGLYPH;
 		}
-		/* If display resolution has changed after 3D switching
-		   reset the window setting */
-		if (timings.x_res != disp->panel.timings.x_res ||
-			timings.y_res != disp->panel.timings.y_res)
-			set_default_window(dev, &dev->win);
 	}
 
 	if (disp->panel.s3d_info.type == S3D_DISP_NONE &&
@@ -1668,13 +1641,8 @@ static int change_s3d_mode(struct s3d_ovl_device *dev,
 			mgr->get_manager_info(mgr, &info);
 			info.alpha_enabled = false;
 			r = mgr->set_manager_info(mgr, &info);
-			if (r) {
-				/* Alpha blender is always enabled in OMAP4 manager
-				driver so just give warning here but do not return
-				error */
-				S3DWARN("failed to disable alpha blender\n");
-				r = 0;
-			}
+			if (r)
+				S3DERR("failed to set alpha blender\n");
 		} else {
 			S3DERR("invalid manager");
 			r = -EINVAL;
@@ -2840,12 +2808,10 @@ static int vidioc_s_ctrl(struct file *file, void *fh, struct v4l2_control *a)
 		}
 	case V4L2_CID_PRIVATE_S3D_MODE:
 		{
-			if (dev->streaming)
-				return -EBUSY;
 			if (a->value < 0 || a->value >= V4L2_S3D_MODE_MAX)
 				return -EINVAL;
 			mutex_lock(&dev->lock);
-			if (change_s3d_mode(dev, a->value)) {
+			if (dev->streaming && change_s3d_mode(dev, a->value)) {
 				mutex_unlock(&dev->lock);
 				return -EINVAL;
 			}
@@ -2871,7 +2837,7 @@ static int vidioc_qbuf(struct file *file, void *fh, struct v4l2_buffer *buffer)
 	struct s3d_ovl_device *dev = fh;
 	struct videobuf_queue *q = &dev->vbq;
 	int r = 0;
-	bool buf_queue_empty = false;
+	bool push_buf = false;
 
 	mutex_lock(&dev->lock);
 	if ((V4L2_BUF_TYPE_VIDEO_OUTPUT != buffer->type) ||
@@ -2882,8 +2848,9 @@ static int vidioc_qbuf(struct file *file, void *fh, struct v4l2_buffer *buffer)
 	}
 
 	if (dev->streaming && dssdev_manually_updated(dev->cur_disp) &&
-		list_empty(&dev->videobuf_q))
-		buf_queue_empty = true;
+		list_empty(&dev->videobuf_q) &&
+		(dev->cur_buf == dev->next_buf))
+		push_buf = true;
 
 	r = videobuf_qbuf(q, buffer);
 	if (r)
@@ -2894,8 +2861,7 @@ static int vidioc_qbuf(struct file *file, void *fh, struct v4l2_buffer *buffer)
 		goto exit;
 	}
 
-	if (buf_queue_empty && !list_empty(&dev->videobuf_q) &&
-		(dev->cur_buf == dev->next_buf)) {
+	if (push_buf) {
 		dev->next_buf = list_entry(dev->videobuf_q.next,
 					struct videobuf_buffer, queue);
 		list_del(&dev->next_buf->queue);
@@ -2964,6 +2930,10 @@ static int vidioc_streamon(struct file *file, void *fh, enum v4l2_buf_type i)
 		mutex_unlock(&dev->lock);
 		return r;
 	}
+
+	/*TODO: if the panel resolution changes after going to 3D
+	   what to do we do with the current window setting*/
+	/* set_default_window(dev, &dev->win); */
 
 	r = allocate_resources(dev);
 	if (r) {
@@ -3417,7 +3387,7 @@ static int __init s3d_ovl_dev_init(struct s3d_ovl_device *dev)
 	dev->supported_modes = OMAP_DSS_COLOR_NV12 | OMAP_DSS_COLOR_YUV2 |
 	    OMAP_DSS_COLOR_UYVY | OMAP_DSS_COLOR_RGB16 |
 	    OMAP_DSS_COLOR_RGB24P | OMAP_DSS_COLOR_ARGB32 |
-	    OMAP_DSS_COLOR_RGBX24;
+	    OMAP_DSS_COLOR_RGBX32;
 
 	dev->in_q.bpp = RGB565_BPP;
 	dev->in_q.width = QQVGA_WIDTH;

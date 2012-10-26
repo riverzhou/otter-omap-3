@@ -162,7 +162,6 @@ static inline int listmp_ioctl_create(struct listmp_cmd_args *cargs)
 	unsigned long size;
 	struct listmp_params params;
 
-	cargs->api_status = -1;
 	size = copy_from_user(&params, (void __user *)cargs->args.create.params,
 				sizeof(struct listmp_params));
 	if (size) {
@@ -205,14 +204,10 @@ static inline int listmp_ioctl_create(struct listmp_cmd_args *cargs)
 		listmp_delete(&cargs->args.create.listmp_handle);
 
 free_name:
-	if (unlikely(cargs->args.create.listmp_handle == NULL))
-		retval = -EFAULT;
-	else
-		cargs->api_status = 0;
-
 	if (cargs->args.create.name_len > 0)
 		kfree(params.name);
 
+	cargs->api_status = 0;
 exit:
 	return retval;
 }

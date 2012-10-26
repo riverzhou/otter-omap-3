@@ -537,12 +537,6 @@ unsigned int twl6040_get_sysclk(struct twl6040_codec *twl6040)
 }
 EXPORT_SYMBOL(twl6040_get_sysclk);
 
-int twl6040_get_icrev(struct twl6040_codec  *twl6040)
-{
-	return twl6040->icrev;
-}
-EXPORT_SYMBOL(twl6040_get_icrev);
-
 static int __devinit twl6040_codec_probe(struct platform_device *pdev)
 {
 	struct twl4030_codec_data *pdata = pdev->dev.platform_data;
@@ -551,7 +545,7 @@ static int __devinit twl6040_codec_probe(struct platform_device *pdev)
 	unsigned int naudint;
 	int audpwron;
 	int ret, children = 0;
-	u8 accctl;
+	u8 icrev = 0, accctl;
 
 	if(!pdata) {
 		dev_err(&pdev->dev, "Platform data is missing\n");
@@ -569,9 +563,9 @@ static int __devinit twl6040_codec_probe(struct platform_device *pdev)
 	mutex_init(&twl6040->mutex);
 	mutex_init(&twl6040->io_mutex);
 
-	twl6040->icrev = twl6040_reg_read(twl6040, TWL6040_REG_ASICREV);
+	icrev = twl6040_reg_read(twl6040, TWL6040_REG_ASICREV);
 
-	if (pdata && (twl6040->icrev > TWL6040_REV_1_0))
+	if (pdata && (icrev > 0))
 		audpwron = pdata->audpwron_gpio;
 	else
 		audpwron = -EINVAL;

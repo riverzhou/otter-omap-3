@@ -447,12 +447,16 @@ long st_kim_start(void *kim_data)
 {
 	long err = 0;
 	long retry = POR_RETRY_COUNT;
-	struct ti_st_plat_data  *pdata;
 	struct kim_data_s	*kim_gdata = (struct kim_data_s *)kim_data;
-	pdata = kim_gdata->kim_pdev->dev.platform_data;
+
 	pr_info(" %s", __func__);
+
 	do {
-		pdata->chip_enable(kim_gdata);
+		/* Configure BT nShutdown to HIGH state */
+		gpio_set_value(kim_gdata->nshutdown, GPIO_LOW);
+		mdelay(5);	/* FIXME: a proper toggle */
+		gpio_set_value(kim_gdata->nshutdown, GPIO_HIGH);
+		mdelay(100);
 		/* re-initialize the completion */
 		INIT_COMPLETION(kim_gdata->ldisc_installed);
 		/* send notification to UIM */
@@ -469,10 +473,6 @@ long st_kim_start(void *kim_data)
 			pr_info("ldisc_install = 0");
 			sysfs_notify(&kim_gdata->kim_pdev->dev.kobj,
 					NULL, "install");
-			/* wait for ldisc to be installed */
-			err = wait_for_completion_timeout(
-					&kim_gdata->ldisc_installed,
-					msecs_to_jiffies(LDISC_TIME));
 			err = -ETIMEDOUT;
 			continue;
 		} else {
@@ -485,10 +485,6 @@ long st_kim_start(void *kim_data)
 				pr_info("ldisc_install = 0");
 				sysfs_notify(&kim_gdata->kim_pdev->dev.kobj,
 						NULL, "install");
-				/* wait for ldisc to be installed */
-				err = wait_for_completion_timeout(
-						&kim_gdata->ldisc_installed,
-						msecs_to_jiffies(LDISC_TIME));
 				continue;
 			} else {	/* on success don't retry */
 				break;
@@ -506,7 +502,7 @@ long st_kim_stop(void *kim_data)
 {
 	long err = 0;
 	struct kim_data_s	*kim_gdata = (struct kim_data_s *)kim_data;
-	struct ti_st_plat_data  *pdata = kim_gdata->kim_pdev->dev.platform_data;
+
 	INIT_COMPLETION(kim_gdata->ldisc_installed);
 
 	/* Flush any pending characters in the driver and discipline. */
@@ -525,8 +521,13 @@ long st_kim_stop(void *kim_data)
 		pr_err(" timed out waiting for ldisc to be un-installed");
 		return -ETIMEDOUT;
 	}
-	/* Disable BT */
-	pdata->chip_disable(kim_gdata);
+
+	/* By default configure BT nShutdown to LOW state */
+	gpio_set_value(kim_gdata->nshutdown, GPIO_LOW);
+	mdelay(1);
+	gpio_set_value(kim_gdata->nshutdown, GPIO_HIGH);
+	mdelay(1);
+	gpio_set_value(kim_gdata->nshutdown, GPIO_LOW);
 	return err;
 }
 

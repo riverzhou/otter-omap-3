@@ -39,6 +39,7 @@
 #include <linux/irq.h>
 #include <linux/videodev2.h>
 #include <linux/slab.h>
+#include <linux/delay.h>
 
 #ifndef CONFIG_ARCH_OMAP4
 #include <media/videobuf-dma-sg.h>
@@ -112,6 +113,8 @@ enum dma_channel_state {
 
 #define VDD2_OCP_FREQ_CONST     (cpu_is_omap34xx() ? \
 (cpu_is_omap3630() ? 200000 : 166000) : 0)
+
+#define VOUT_SUSPEND_TIMEOUT	1000
 
 #ifdef CONFIG_OMAP3_ISP_RESIZER_ON_OVERLAY
 struct isp_node pipe;
@@ -1085,17 +1088,10 @@ enum omap_color_mode video_mode_to_dss_mode(struct v4l2_pix_format *pix,
 	case V4L2_PIX_FMT_UYVY:
 		mode = OMAP_DSS_COLOR_UYVY;
 		break;
-	case V4L2_PIX_FMT_RGB555:
-		mode = OMAP_DSS_COLOR_ARGB16_1555;
-		break;
-	case V4L2_PIX_FMT_RGB444:
-		mode = OMAP_DSS_COLOR_ARGB16;
-		break;
 	case V4L2_PIX_FMT_RGB565:
 		mode = OMAP_DSS_COLOR_RGB16;
 		break;
 	case V4L2_PIX_FMT_RGB24:
-	case V4L2_PIX_FMT_BGR24:
 		mode = OMAP_DSS_COLOR_RGB24P;
 		break;
 	case V4L2_PIX_FMT_RGB32:
@@ -1107,7 +1103,7 @@ enum omap_color_mode video_mode_to_dss_mode(struct v4l2_pix_format *pix,
 #endif
 		break;
 	case V4L2_PIX_FMT_BGR32:
-		mode = OMAP_DSS_COLOR_RGBX24;
+		mode = OMAP_DSS_COLOR_RGBX32;
 		break;
 	default:
 		mode = -EINVAL;
@@ -1138,8 +1134,8 @@ int omapvid_setup_overlay(struct omap_vout_device *vout,
 	int ret = 0;
 	struct omap_overlay_info info;
 	int cropheight, cropwidth, pixheight, pixwidth;
-	int rotation = vout->rotation;
 	s32 tmp_cropwidth, tmp_cropheight, tmp_pixwidth, tmp_pixheight;
+
 
 	if ((ovl->caps & OMAP_DSS_OVL_CAP_SCALE) == 0 &&
 			(outw != vout->pix.width || outh != vout->pix.height)) {
@@ -1201,13 +1197,7 @@ int omapvid_setup_overlay(struct omap_vout_device *vout,
 	info.width = cropwidth;
 	info.height = cropheight;
 	info.color_mode = vout->dss_mode;
-	/*
-	 * DSS mirroring is left-to-right, while vout->mirror is top-down,
-	 * so adjust rotation by 180 degrees
-	 */
 	info.mirror = vout->mirror;
-	if (vout->mirror)
-		rotation ^= dss_rotation_180_degree;
 	info.pos_x = posx;
 	info.pos_y = posy;
 	info.out_width = outw;
@@ -1226,14 +1216,14 @@ int omapvid_setup_overlay(struct omap_vout_device *vout,
 			info.rotation_type = OMAP_DSS_ROT_DMA;
 			info.screen_width = pixwidth;
 		} else {
-			info.rotation = rotation;
+			info.rotation = vout->rotation;
 			info.rotation_type = OMAP_DSS_ROT_VRFB;
 			info.screen_width = 2048;
 		}
 	} else {
 		info.rotation_type = OMAP_DSS_ROT_TILER;
 		info.screen_width = pixwidth;
-		info.rotation = rotation;
+		info.rotation = vout->rotation;
 	}
 
 	v4l2_dbg(1, debug, &vout->vid_dev->v4l2_dev,
@@ -1335,8 +1325,6 @@ int omapvid_apply_changes(struct omap_vout_device *vout)
 				dev->driver->update(dev, 0, 0,
 					dev->panel.timings.x_res,
 					dev->panel.timings.y_res);
-		} else if (ovl->manager->wait_for_go) {
-			ovl->manager->wait_for_go(ovl->manager);
 		}
 #endif
 	}
@@ -1387,6 +1375,13 @@ static int omapvid_process_frame(struct omap_vout_device *vout)
 {
 	u32 addr, uv_addr;
 	int ret = 0;
+	struct omapvideo_info *ovid;
+	struct omap_overlay *ovl;
+	struct omap_dss_device *cur_display;
+
+	ovid = &vout->vid_info;
+	ovl = ovid->overlays[0];
+	cur_display = ovl->manager->device;
 
 	vout->next_frm = list_entry(vout->dma_queue.next,
 			struct videobuf_buffer, queue);
@@ -1487,9 +1482,7 @@ void omap_vout_isr(void *arg, unsigned int irqstatus)
 
 	switch (cur_display->type) {
 	case OMAP_DISPLAY_TYPE_DSI:
-		if (!((irqstatus & irq) ||
-			((cur_display->phy.dsi.xfer_mode == OMAP_DSI_XFER_VIDEO_MODE) &&
-			(irqstatus & (DISPC_IRQ_VSYNC | DISPC_IRQ_VSYNC2)))))
+		if (!(irqstatus & irq))
 			goto vout_isr_err;
 
 		/* display 2nd field for interlaced buffers if progressive */
@@ -1543,19 +1536,30 @@ wb:
 
 intlace:
 
-	/* queue process frame */
-	if (w) {
-		if (!w->queued) {
-			w->vout = vout;
-			w->process = process;
-			w->queued = true;
-			queue_work(vout->workqueue, &w->work);
+	/* if any manager is in manual update mode, we must schedule work */
+	if (manually_updated(vout)) {
+		/* queue process frame */
+
+		if (w) {
+			if (!w->queued) {
+				w->vout = vout;
+				w->process = process;
+				w->queued = true;
+				INIT_WORK(&w->work, omapvid_process_frame_work);
+				queue_work(vout->workqueue, &w->work);
+			} else
+				printk(KERN_ERR "<%s> work already Queued. "
+						"skip processing the frame ="
+						" %d\n",
+				       __func__, w->queued);
 		} else
-			printk(KERN_DEBUG "<%s> work already Queued. "
-					"skip processing the frame ="
-					" %d\n", __func__, w->queued);
-	} else
-		printk(KERN_ERR "Failed to get allocate work struct\n");
+			printk(KERN_ERR "Failed to get allocate work struct\n");
+	} else {
+		/* process frame here for auto update screens */
+		if (process && next_frame(vout))
+			goto vout_isr_err;
+		omapvid_process_frame(vout);
+	}
 
 vout_isr_err:
 	spin_unlock_irqrestore(&vout->vbq_lock, flags);
@@ -2114,7 +2118,6 @@ static int omap_vout_release(struct file *file)
 	struct videobuf_queue *q;
 	struct omapvideo_info *ovid;
 	struct omap_vout_device *vout = file->private_data;
-	struct omap_overlay *ovl;
 
 	if (!vout)
 		return 0;
@@ -2136,7 +2139,7 @@ static int omap_vout_release(struct file *file)
 	q = &vout->vbq;
 	/* Disable all the overlay managers connected with this interface */
 	for (i = 0; i < ovid->num_overlays; i++) {
-		ovl = ovid->overlays[i];
+		struct omap_overlay *ovl = ovid->overlays[i];
 		if (ovl->manager && ovl->manager->device) {
 			struct omap_overlay_info info;
 			ovl->get_overlay_info(ovl, &info);
@@ -2149,15 +2152,6 @@ static int omap_vout_release(struct file *file)
 	if (ret)
 		v4l2_warn(&vout->vid_dev->v4l2_dev,
 				"Unable to apply changes\n");
-
-	for (i = 0; i < ovid->num_overlays; i++) {
-		ovl = ovid->overlays[i];
-		if (dss_ovl_manually_updated(ovl)) {
-			if  (ovl->manager->wait_for_vsync)
-				ovl->manager->wait_for_vsync(ovl->manager);
-		} else if (ovl->wait_for_go)
-			ovl->wait_for_go(ovl);
-	}
 
 #ifdef CONFIG_OMAP3_ISP_RESIZER_ON_OVERLAY
 	/* Release the ISP resizer resource if not already done so */
@@ -3275,6 +3269,13 @@ static int vidioc_s_fbuf(struct file *file, void *fh,
 			(a->flags & V4L2_FBUF_FLAG_CHROMAKEY))
 		return -EINVAL;
 
+	if ((a->flags & V4L2_FBUF_FLAG_CHROMAKEY) &&
+	    (a->flags & V4L2_FBUF_FLAG_LOCAL_ALPHA)) {
+		printk(KERN_WARNING "%s: flags CHROMAKEY and ALPHA are both set! this is not an issue...\n",
+		       __func__);
+	}
+
+
 	if ((a->flags & V4L2_FBUF_FLAG_SRC_CHROMAKEY)) {
 		vout->fbuf.flags |= V4L2_FBUF_FLAG_SRC_CHROMAKEY;
 		key_type =  OMAP_DSS_COLOR_KEY_VID_SRC;
@@ -3694,6 +3695,34 @@ static DEVICE_ATTR(isprsz_mode, S_IRUGO|S_IWUGO,
 		isprsz_mode_show, isprsz_mode_store);
 #endif
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void omap_vout_early_suspend(struct early_suspend *handler)
+{
+	struct omap_vout_device *vout;
+	unsigned long start = jiffies;
+	unsigned long timeout = jiffies + msecs_to_jiffies(VOUT_SUSPEND_TIMEOUT);
+
+	vout = container_of(handler, struct omap_vout_device, early_suspend);
+
+	while (time_before(jiffies, timeout)) {
+		mutex_lock(&vout->lock);
+		if (!vout->opened) {
+			mutex_unlock(&vout->lock);
+			return;
+		}
+		mutex_unlock(&vout->lock);
+		msleep(1);
+	}
+
+	printk(KERN_WARNING VOUT_NAME ": timeout waiting for close\n");
+}
+
+static void omap_vout_late_resume(struct early_suspend *handler)
+{
+	/* we don't need to do anything on resume, resume is handled by user */
+}
+#endif
+
 /* Create video out devices */
 static int __init omap_vout_create_video_devices(struct platform_device *pdev)
 {
@@ -3741,7 +3770,6 @@ static int __init omap_vout_create_video_devices(struct platform_device *pdev)
 			ret = -ENOMEM;
 			goto error_q;
 		}
-		INIT_WORK(&vout->work->work, omapvid_process_frame_work);
 		vout->work->queued = false;
 
 #endif
@@ -3795,6 +3823,13 @@ error:
 		return ret;
 
 success:
+#ifdef CONFIG_HAS_EARLYSUSPEND
+		vout->early_suspend.suspend = omap_vout_early_suspend;
+		vout->early_suspend.resume = omap_vout_late_resume;
+		vout->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
+		register_early_suspend(&vout->early_suspend);
+#endif
+
 #ifdef CONFIG_OMAP3_ISP_RESIZER_ON_OVERLAY
 		device_create_file(&vfd->dev, &dev_attr_isprsz_enable);
 		device_create_file(&vfd->dev, &dev_attr_isprsz_mode);

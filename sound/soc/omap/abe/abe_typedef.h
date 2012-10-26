@@ -73,7 +73,6 @@ typedef ABE_uint16 *pABE_uint16;
 typedef ABE_int16 *pABE_int16;
 typedef ABE_int32 *pABE_int32;
 typedef ABE_uint32 *pABE_uint32;
-
 /*
  * Commonly used structures
  */
@@ -221,25 +220,17 @@ typedef struct {
 	ABE_uchar atc_irq_data;
 	/* 11: ping/pong buffer flag */
 	ABE_uchar counter;
-	/* 12: reseved */
-	ABE_uint16 dummy1;
-	/* 14: reseved */
-	ABE_uint16 dummy2;
-	/* 16 For 12/11 in case of 44.1 mode (same address as SIO desc)*/
-	ABE_uint16 split_addr1;
-	/* 18: reseved */
-	ABE_uint16 dummy3;
-	/* 20: current Base address of the working buffer */
+	/* 12: current Base address of the working buffer */
 	ABE_uint16 workbuff_BaseAddr;
-	/* 22: samples left in the working buffer */
+	/* 14: samples left in the working buffer */
 	ABE_uint16 workbuff_Samples;
-	/* 24: Base address of the ping/pong buffer 0 */
+	/* 16: Base address of the ping/pong buffer 0 */
 	ABE_uint16 nextbuff0_BaseAddr;
-	/* 26: samples available in the ping/pong buffer 0 */
+	/* 18: samples available in the ping/pong buffer 0 */
 	ABE_uint16 nextbuff0_Samples;
-	/* 28: Base address of the ping/pong buffer 1 */
+	/* 20: Base address of the ping/pong buffer 1 */
 	ABE_uint16 nextbuff1_BaseAddr;
-	/* 30: samples available in the ping/pong buffer 1 */
+	/* 22: samples available in the ping/pong buffer 1 */
 	ABE_uint16 nextbuff1_Samples;
 } ABE_SPingPongDescriptor;
 #endif/* _ABE_TYPEDEF_H_ */

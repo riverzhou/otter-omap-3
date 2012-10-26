@@ -19,7 +19,6 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/platform_device.h>
-#include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/leds.h>
 #include <linux/gpio.h>
@@ -33,7 +32,6 @@
 #include <mach/omap4-common.h>
 #include <mach/emif.h>
 #include <mach/lpddr2-elpida.h>
-#include <mach/dmm.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -58,8 +56,6 @@
 #include "mux.h"
 #include "hsmmc.h"
 #include "smartreflex-class3.h"
-#include <linux/skbuff.h>
-#include <linux/ti_wilink_st.h>
 
 #define GPIO_HUB_POWER 1
 #define GPIO_HUB_NRESET_39 39
@@ -67,29 +63,17 @@
 #define GPIO_BOARD_ID0 182
 #define GPIO_BOARD_ID1 101
 #define GPIO_BOARD_ID2 171
-#define BLUETOOTH_UART_DEV_NAME "/dev/ttyO1"
 
 static int board_revision;
 
 /* wl127x BT, FM, GPS connectivity chip */
 static int gpios[] = {46, -1, -1};
-/* wl128x BT, FM, GPS connectivity chip */
-struct ti_st_plat_data wilink_pdata = {
-	.nshutdown_gpio = 46,
-	.dev_name = BLUETOOTH_UART_DEV_NAME,
-	.flow_cntrl = 1,
-	.baud_rate = 3000000,
-};
-
 static struct platform_device wl127x_device = {
        .name           = "kim",
        .id             = -1,
-       .dev.platform_data = &wilink_pdata,
+       .dev.platform_data = &gpios,
 };
-static struct platform_device btwilink_device = {
-	.name = "btwilink",
-	.id = -1,
- };
+
 static struct gpio_led gpio_leds[] = {
 	{
 		.name			= "pandaboard::status1",
@@ -173,8 +157,7 @@ static struct omap_dss_board_info panda_dss_data = {
 static struct platform_device *panda_devices[] __initdata = {
 	&leds_gpio,
 	&sdp4430_hdmi_audio_device,
-	&wl127x_device,
-	&btwilink_device
+	&wl127x_device
 };
 
 static void __init omap4_display_init(void)
@@ -238,7 +221,7 @@ static struct omap2_hsmmc_info mmc[] = {
 		.gpio_wp        = 4,
 		.ocr_mask       = MMC_VDD_165_195,
 #ifdef CONFIG_PM_RUNTIME
-		.power_saving   = false,
+		.power_saving   = true,
 #endif
 	},
 	{}	/* Terminator */
@@ -503,21 +486,11 @@ static int __init omap4_i2c_init(void)
 static void __init omap4_ehci_init(void)
 {
 	int hub_nreset, ret;
-	struct clk *phy_ref_clk;
 
 	if (board_revision)
 		hub_nreset = GPIO_HUB_NRESET_62;
 	else
 		hub_nreset = GPIO_HUB_NRESET_39;
-
-	/* FREF_CLK3 provides the 19.2 MHz reference clock to the PHY */
-	phy_ref_clk = clk_get(NULL, "auxclk3_ck");
-	if (IS_ERR(phy_ref_clk)) {
-		pr_err("Cannot request auxclk3\n");
-		goto error1;
-	}
-	clk_set_rate(phy_ref_clk, 19200000);
-	clk_enable(phy_ref_clk);
 
 	/* disable the power to the usb hub prior to init */
 	ret = gpio_request(GPIO_HUB_POWER, "hub_power");
@@ -902,7 +875,6 @@ static void __init omap_panda_init(void)
 	omap_init_emif_timings();
 	omap4_audio_conf();
 	omap4_i2c_init();
-	omap_dmm_init();
 	omap4_display_init();
 	platform_add_devices(panda_devices, ARRAY_SIZE(panda_devices));
 	omap_serial_init(omap_serial_platform_data);

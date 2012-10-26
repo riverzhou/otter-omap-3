@@ -36,8 +36,8 @@
 #define SDIO_DEVICE_ID_MARVELL_8688BT		0x9105
 
 #ifdef CONFIG_TIWLAN_SDIO
-#define SDIO_VENDOR_ID_TI              0x0097
-#define SDIO_DEVICE_ID_TI_WL12xx       0x4076
+#define SDIO_VENDOR_ID_TI              0x104c
+#define SDIO_DEVICE_ID_TI_WL12xx       0x9066
 #endif
 
 #define SDIO_VENDOR_ID_SIANO			0x039a

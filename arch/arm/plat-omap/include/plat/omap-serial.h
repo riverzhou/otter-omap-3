@@ -62,7 +62,7 @@
 /* WER = 0x7F
  * Enable module level wakeup in WER reg
  */
-#define OMAP_UART_WER_MOD_WKUP	0XFF
+#define OMAP_UART_WER_MOD_WKUP	0X7F
 
 /* Enable XON/XOFF flow control on output */
 #define OMAP_UART_SW_TX		0x04
@@ -80,7 +80,7 @@
 #define DEFAULT_RXDMA_TIMEOUT	(3 * HZ)	/* RX DMA timeout (jiffies) */
 #define DEFAULT_RXDMA_POLLRATE	1		/* RX DMA polling rate (us) */
 #define DEFAULT_RXDMA_BUFSIZE	4096		/* RX DMA buffer size */
-#define DEFAULT_IDLE_TIMEOUT	2000		/* UART idle timeout (ms) */
+#define DEFAULT_IDLE_TIMEOUT	5000		/* UART idle timeout (ms) */
 
 #define OMAP_MAX_HSUART_PORTS	4
 #define UART1                  (0x0)
@@ -126,8 +126,6 @@ struct omap_uart_port_info {
 	u16			cts_padconf;
 	u32			cts_padvalue;
 	bool                    (*plat_omap_bt_active)(void);
-	/* GPIO Number at this Pad Config Mux */
-	unsigned int		omap_uart_gpio_mux_mode;
 };
 
 struct uart_omap_dma {
@@ -180,10 +178,6 @@ struct uart_omap_port {
 	unsigned long		port_activity;
 	unsigned int		baud_rate;
 	void			(*plat_hold_wakelock)(void *up, int flag);
-	int			try_locked;
-	unsigned int            port_tx_active;
-	unsigned int            port_rx_active;
-	unsigned int            port_reg_access_active;
 };
 
 enum {
@@ -197,11 +191,6 @@ int omap_uart_active(int num, u32 timeout);
 void omap_uart_update_jiffies(int num);
 bool omap_is_console_port(struct uart_port *port);
 #ifdef CONFIG_PM
-int omap_uart_is_enabled(int uart_num);
-void omap_uart_resume(int uart_num);
-void omap_uart_enable_clock_from_ext(int uart_num);
-void omap_uart_disable_clock_from_ext(int uart_num);
-void omap_uart_start_inactivity_timer(unsigned int uart_num);
+void omap_uart_enable_clock_from_irq(int uart_num);
 #endif
-void omap_uart_mdr1_errataset(int uart_no, u8 mdr1_val, u8 fcr_val);
 #endif /* __OMAP_SERIAL_H__ */

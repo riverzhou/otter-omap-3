@@ -77,7 +77,6 @@ struct twl6040_data {
 	int pll;
 	int non_lp;
 	int earpiece_used;
-	int headset_power_mode;
 	unsigned int clk_in;
 	unsigned int sysclk;
 	struct regulator *vddhf_reg;
@@ -90,7 +89,6 @@ struct twl6040_data {
 	int hfl_gain;
 	int hfr_gain;
 	int hs_gain;
-	int ear_gain;
 };
 
 /*
@@ -257,48 +255,6 @@ static int twl6040_write(struct snd_soc_codec *codec,
 	if (reg >= TWL6040_CACHEREGNUM)
 		return -EIO;
 
-	/* SW Workaround for Pops during device switch */
-	if (snd_soc_read(codec, TWL6040_REG_ASICREV) < TWL6040_REV_1_3) {
-		u8 reg_sync_dac = 0;
-		/* Synchronize HS DAC enables */
-		if (reg == TWL6040_REG_HSLCTL) {
-			reg_sync_dac = twl6040_reg_read(twl6040,
-							TWL6040_REG_HSRCTL);
-			reg_sync_dac &= ~TWL6040_HSDACENAR;
-			reg_sync_dac |= value & TWL6040_HSDACENAL;
-			twl6040_write_reg_cache(codec, TWL6040_REG_HSRCTL,
-						reg_sync_dac);
-			twl6040_reg_write(twl6040, TWL6040_REG_HSRCTL,
-					  reg_sync_dac);
-		}
-		/* Write all but DAC TWL6040_HSDACENAR bit */
-		if (reg == TWL6040_REG_HSRCTL) {
-			reg_sync_dac = twl6040_reg_read(twl6040,
-							TWL6040_REG_HSRCTL);
-			value = (value & ~TWL6040_HSDACENAL) |
-					    (reg_sync_dac & TWL6040_HSDACENAR);
-		}
-
-		/* Synchronize HF DAC enables */
-		if (reg == TWL6040_REG_HFLCTL) {
-			reg_sync_dac = twl6040_reg_read(twl6040,
-							TWL6040_REG_HFRCTL);
-			reg_sync_dac &= ~TWL6040_HFDACENAR;
-			reg_sync_dac |= value & TWL6040_HFDACENAL;
-			twl6040_write_reg_cache(codec,
-						TWL6040_REG_HFRCTL,
-						reg_sync_dac);
-			twl6040_reg_write(twl6040, TWL6040_REG_HFRCTL,
-					  reg_sync_dac);
-		}
-		/* Write all but DAC TWL6040_HFDACENAR bit */
-		if (reg == TWL6040_REG_HFRCTL) {
-			reg_sync_dac = twl6040_reg_read(twl6040,
-							TWL6040_REG_HFRCTL);
-			value = (value & ~TWL6040_HFDACENAL) |
-					(reg_sync_dac & TWL6040_HFDACENAR);
-		}
-	}
 	twl6040_write_reg_cache(codec, reg, value);
 	return twl6040_reg_write(twl6040, reg, value);
 }
@@ -359,10 +315,9 @@ static void twl6040_init_vdd_regs(struct snd_soc_codec *codec)
 /* set headset dac and driver power mode */
 static int headset_power_mode(struct snd_soc_codec *codec, int high_perf)
 {
-	int hslctl, hsrctl, hslctl_new, hsrctl_new;
+	int hslctl, hsrctl;
 	int mask = TWL6040_HSDRVMODEL | TWL6040_HSDACMODEL;
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-	struct twl6040_codec *twl6040 = codec->control_data;
 
 	/* Earphone doesn't support low power mode */
 	high_perf |= priv->earpiece_used;
@@ -371,55 +326,23 @@ static int headset_power_mode(struct snd_soc_codec *codec, int high_perf)
 	hsrctl = twl6040_read_reg_cache(codec, TWL6040_REG_HSRCTL);
 
 	if (high_perf) {
-		hslctl_new = hslctl & ~mask;
-		hsrctl_new = hsrctl & ~mask;
+		hslctl &= ~mask;
+		hsrctl &= ~mask;
 	} else {
-		hslctl_new = hslctl | mask;
-		hsrctl_new = hsrctl | mask;
+		hslctl |= mask;
+		hsrctl |= mask;
 	}
 
-	/* SW Workaround for DC offset during device switch */
-	if (snd_soc_read(codec, TWL6040_REG_ASICREV) < TWL6040_REV_1_3) {
-		twl6040_write_reg_cache(codec, TWL6040_REG_HSLCTL, hslctl_new);
-		twl6040_write_reg_cache(codec, TWL6040_REG_HSRCTL, hsrctl_new);
-
-		twl6040_reg_write(twl6040, TWL6040_REG_HSRCTL,
-					(hsrctl |= TWL6040_HSDACENAR));
-		twl6040_reg_write(twl6040, TWL6040_REG_HSLCTL, hslctl_new);
-		twl6040_reg_write(twl6040, TWL6040_REG_HSRCTL,
-					(hsrctl &= ~TWL6040_HSDACENAR));
-		twl6040_reg_write(twl6040, TWL6040_REG_HSLCTL,
-					(hslctl_new |= TWL6040_HSDACENAL));
-		twl6040_reg_write(twl6040, TWL6040_REG_HSRCTL, hsrctl_new);
-		twl6040_reg_write(twl6040, TWL6040_REG_HSLCTL,
-					(hslctl_new &= ~TWL6040_HSDACENAL));
-	} else {
-		twl6040_write(codec, TWL6040_REG_HSLCTL, hslctl_new);
-		twl6040_write(codec, TWL6040_REG_HSRCTL, hsrctl_new);
-	}
+	twl6040_write(codec, TWL6040_REG_HSLCTL, hslctl);
+	twl6040_write(codec, TWL6040_REG_HSRCTL, hsrctl);
 
 	return 0;
 }
 
-static int twl6040_hs_dacl_event(struct snd_soc_dapm_widget *w,
-			struct snd_kcontrol *kcontrol, int event)
-{
-	struct snd_soc_codec *codec = w->codec;
-	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-
-	if (event & SND_SOC_DAPM_PRE_PMU)
-		headset_power_mode(codec, priv->headset_power_mode);
-	else
-		msleep(1);
-
-	return 0;
-}
-
-static int twl6040_hs_dacr_event(struct snd_soc_dapm_widget *w,
+static int twl6040_hs_dac_event(struct snd_soc_dapm_widget *w,
 			struct snd_kcontrol *kcontrol, int event)
 {
 	msleep(1);
-
 	return 0;
 }
 
@@ -431,25 +354,19 @@ static int twl6040_power_mode_event(struct snd_soc_dapm_widget *w,
 
 	if (SND_SOC_DAPM_EVENT_ON(event)) {
 		priv->non_lp++;
+		if (!strcmp(w->name,"Earphone Driver")) {
+			/* Earphone doesn't support low power mode */
+			priv->earpiece_used = 1;
+			headset_power_mode(w->codec, 1);
+		}
 	} else {
 		priv->non_lp--;
+		if (!strcmp(w->name,"Earphone Driver")) {
+			priv->earpiece_used = 0;
+		}
 	}
 
 	msleep(1);
-
-	return 0;
-}
-
-static int twl6040_ear_mux_event(struct snd_soc_dapm_widget *w,
-			struct snd_kcontrol *kcontrol, int event)
-{
-	struct snd_soc_codec *codec = w->codec;
-	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-
-	if (SND_SOC_DAPM_EVENT_ON(event))
-		priv->earpiece_used = 1;
-	else
-		priv->earpiece_used = 0;
 
 	return 0;
 }
@@ -576,14 +493,6 @@ static irqreturn_t twl6040_audio_handler(int irq, void *data)
 	.private_value = (unsigned long)&(struct soc_mixer_control) \
 		{.reg = reg_left, .rreg = reg_right, .shift = xshift, \
 		.max = xmax, .platform_max = xmax, .invert = xinvert} }
-#define SOC_SINGLE_TLV_TWL6040_EAR(xname, reg, shift, max, invert, tlv_array) \
-{	.iface = SNDRV_CTL_ELEM_IFACE_MIXER, .name = xname, \
-	.access = SNDRV_CTL_ELEM_ACCESS_TLV_READ |\
-		 SNDRV_CTL_ELEM_ACCESS_READWRITE,\
-	.tlv.p = (tlv_array), \
-	.info = snd_soc_info_volsw, .get = snd_soc_get_volsw,\
-	.put = snd_soc_put_volsw_twl6040_ear, \
-	.private_value =  SOC_SINGLE_VALUE(reg, shift, max, invert) }
 
 static int snd_soc_put_volsw_twl6040_hs(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
@@ -655,37 +564,6 @@ static int snd_soc_put_volsw_2r_twl6040_hf(struct snd_kcontrol *kcontrol,
 	return err;
 }
 
-int snd_soc_put_volsw_twl6040_ear(struct snd_kcontrol *kcontrol,
-	struct snd_ctl_elem_value *ucontrol)
-{
-	struct soc_mixer_control *mc =
-		(struct soc_mixer_control *)kcontrol->private_value;
-	struct snd_soc_codec *codec = snd_kcontrol_chip(kcontrol);
-	unsigned int reg = mc->reg;
-	unsigned int shift = mc->shift;
-	unsigned int rshift = mc->rshift;
-	int max = mc->max;
-	unsigned int mask = (1 << fls(max)) - 1;
-	unsigned int invert = mc->invert;
-	unsigned int val, val2, val_mask;
-	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-
-	val = (ucontrol->value.integer.value[0] & mask);
-	if (invert)
-		val = max - val;
-	val_mask = mask << shift;
-	val = val << shift;
-	if (shift != rshift) {
-		val2 = (ucontrol->value.integer.value[1] & mask);
-		if (invert)
-			val2 = max - val2;
-		val_mask |= mask << rshift;
-		val |= val2 << rshift;
-	}
-	priv->ear_gain = val;
-	return snd_soc_update_bits_locked(codec, reg, val_mask, val);
-}
-
 /*
  * MICATT volume control:
  * from -6 to 0 dB in 6 dB steps
@@ -737,8 +615,6 @@ static const char *twl6040_hs_texts[] =
 static const char *twl6040_hf_texts[] =
 	{"Off", "HF DAC", "Line-In amp"};
 
-static const char *twl6040_ep_texts[] = {"Off", "On"};
-
 static const struct soc_enum twl6040_enum[] = {
 	SOC_ENUM_SINGLE(TWL6040_REG_MICLCTL, 3, 4, twl6040_amicl_texts),
 	SOC_ENUM_SINGLE(TWL6040_REG_MICRCTL, 3, 4, twl6040_amicr_texts),
@@ -747,9 +623,6 @@ static const struct soc_enum twl6040_enum[] = {
 	SOC_ENUM_SINGLE(TWL6040_REG_HFLCTL, 2, 3, twl6040_hf_texts),
 	SOC_ENUM_SINGLE(TWL6040_REG_HFRCTL, 2, 3, twl6040_hf_texts),
 };
-
-static const struct soc_enum twl6040_virt_enum =
-	SOC_ENUM_SINGLE(0, 0, 2, twl6040_ep_texts);
 
 static const struct snd_kcontrol_new amicl_control =
 	SOC_DAPM_ENUM("Route", twl6040_enum[0]);
@@ -764,10 +637,6 @@ static const struct snd_kcontrol_new hsl_mux_controls =
 static const struct snd_kcontrol_new hsr_mux_controls =
 	SOC_DAPM_ENUM("Route", twl6040_enum[3]);
 
-/* EP playback virtual mux */
-static const struct snd_kcontrol_new ep_virt_mux_controls =
-	SOC_DAPM_ENUM_VIRT("Route", twl6040_virt_enum);
-
 /* Handsfree DAC playback switches */
 static const struct snd_kcontrol_new hfl_mux_controls =
 	SOC_DAPM_ENUM("Route", twl6040_enum[4]);
@@ -777,12 +646,6 @@ static const struct snd_kcontrol_new hfr_mux_controls =
 
 static const struct snd_kcontrol_new ep_driver_switch_controls =
 	SOC_DAPM_SINGLE("Switch", TWL6040_REG_EARCTL, 0, 1, 0);
-
-static const struct snd_kcontrol_new auxl_switch_controls =
-	SOC_DAPM_SINGLE("Switch", TWL6040_REG_HFLCTL, 6, 1, 0);
-
-static const struct snd_kcontrol_new auxr_switch_controls =
-	SOC_DAPM_SINGLE("Switch", TWL6040_REG_HFRCTL, 6, 1, 0);
 
 static const struct snd_kcontrol_new twl6040_snd_controls[] = {
 	/* Capture gains */
@@ -800,7 +663,7 @@ static const struct snd_kcontrol_new twl6040_snd_controls[] = {
 		TWL6040_REG_HSGAIN, 0, 4, 0xF, 1, hs_tlv),
 	SOC_DOUBLE_R_TLV_TWL6040_HF("Handsfree Playback Volume",
 		TWL6040_REG_HFLGAIN, TWL6040_REG_HFRGAIN, 0, 0x1D, 1, hf_tlv),
-	SOC_SINGLE_TLV_TWL6040_EAR("Earphone Playback Volume",
+	SOC_SINGLE_TLV("Earphone Playback Volume",
 		TWL6040_REG_EARCTL, 1, 0xF, 1, ep_tlv),
 };
 
@@ -818,8 +681,6 @@ static const struct snd_soc_dapm_widget twl6040_dapm_widgets[] = {
 	SND_SOC_DAPM_OUTPUT("HFL"),
 	SND_SOC_DAPM_OUTPUT("HFR"),
 	SND_SOC_DAPM_OUTPUT("EP"),
-	SND_SOC_DAPM_OUTPUT("AUXL"),
-	SND_SOC_DAPM_OUTPUT("AUXR"),
 
 	/* Analog input muxes for the capture amplifiers */
 	SND_SOC_DAPM_MUX("Analog Left Capture Route",
@@ -858,12 +719,11 @@ static const struct snd_soc_dapm_widget twl6040_dapm_widgets[] = {
 	/* DACs */
 	SND_SOC_DAPM_DAC_E("HSDAC Left", "Headset Playback",
 			TWL6040_REG_HSLCTL, 0, 0,
-			twl6040_hs_dacl_event,
-			SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
-			SND_SOC_DAPM_POST_PMD),
+			twl6040_hs_dac_event,
+			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_DAC_E("HSDAC Right", "Headset Playback",
 			TWL6040_REG_HSRCTL, 0, 0,
-			twl6040_hs_dacr_event,
+			twl6040_hs_dac_event,
 			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_DAC_E("HFDAC Left", "Handsfree Playback",
 			TWL6040_REG_HFLCTL, 0, 0,
@@ -883,10 +743,6 @@ static const struct snd_soc_dapm_widget twl6040_dapm_widgets[] = {
 			SND_SOC_NOPM, 0, 0, &hsl_mux_controls),
 	SND_SOC_DAPM_MUX("HS Right Playback",
 			SND_SOC_NOPM, 0, 0, &hsr_mux_controls),
-	SND_SOC_DAPM_MUX_E("EP Playback",
-			SND_SOC_NOPM, 0, 0, &ep_virt_mux_controls,
-			twl6040_ear_mux_event,
-			SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
 
 	/* Analog playback drivers */
 	SND_SOC_DAPM_DRV_E("Handsfree Left Driver",
@@ -901,8 +757,8 @@ static const struct snd_soc_dapm_widget twl6040_dapm_widgets[] = {
 			TWL6040_REG_HSLCTL, 2, 0, NULL, 0),
 	SND_SOC_DAPM_DRV("Headset Right Driver",
 			TWL6040_REG_HSRCTL, 2, 0, NULL, 0),
-	SND_SOC_DAPM_DRV_E("Earphone Driver",
-			TWL6040_REG_EARCTL, 0, 0, NULL, 0,
+	SND_SOC_DAPM_SWITCH_E("Earphone Driver",
+			SND_SOC_NOPM, 0, 0, &ep_driver_switch_controls,
 			twl6040_power_mode_event,
 			SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD),
 
@@ -946,8 +802,8 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"HSOL", NULL, "Headset Left Driver"},
 	{"HSOR", NULL, "Headset Right Driver"},
 
-	{"EP Playback", "On", "HSDAC Left"},
-	{"Earphone Driver", "NULL", "EP Playback"},
+	/* Earphone playback path */
+	{"Earphone Driver", "Switch", "HSDAC Left"},
 	{"EP", NULL, "Earphone Driver"},
 
 	{"HF Left Playback", "HF DAC", "HFDAC Left"},
@@ -964,9 +820,6 @@ static const struct snd_soc_dapm_route intercon[] = {
 
 	{"HFL", NULL, "Handsfree Left Driver"},
 	{"HFR", NULL, "Handsfree Right Driver"},
-
-	{"AUXL", "Switch", "HFDAC Left PGA"},
-	{"AUXR", "Switch", "HFDAC Right PGA"},
 };
 
 static int twl6040_add_widgets(struct snd_soc_codec *codec)
@@ -1099,41 +952,22 @@ static int twl6040_mute(struct snd_soc_dai *codec_dai, int mute)
 {
 	struct snd_soc_codec *codec = codec_dai->codec;
 	struct twl6040_data *priv = snd_soc_codec_get_drvdata(codec);
-	int data;
 
-	if (codec_dai->id == TWL6040_DL1_DAI) {
-		if (mute) {
-			/* headset */
-			priv->hs_gain = twl6040_read_reg_cache(codec,
-						TWL6040_REG_HSGAIN);
-			twl6040_write(codec, TWL6040_REG_HSGAIN, 0xFF);
-			/* earpiece */
-			priv->ear_gain = twl6040_read_reg_cache(codec,
-						TWL6040_REG_EARCTL) >> 1;
-			data = twl6040_read_reg_volatile(codec,
-						TWL6040_REG_EARCTL) & 0x01;
-			twl6040_write(codec, TWL6040_REG_EARCTL, data | 0x1E);
-		} else {
-			/* headset */
-			twl6040_write(codec, TWL6040_REG_HSGAIN, priv->hs_gain);
-			/* earpiece */
-			data = twl6040_read_reg_volatile(codec,
-						TWL6040_REG_EARCTL) & 0x01;
-			twl6040_write(codec, TWL6040_REG_EARCTL,
-				      data | (priv->ear_gain << 1));
-		}
-	} else if (codec_dai->id == TWL6040_DL2_DAI) {
-		if (mute) {
-			priv->hfl_gain = twl6040_read_reg_cache(codec,
+	if (mute) {
+		priv->hfl_gain = twl6040_read_reg_cache(codec,
 						TWL6040_REG_HFLGAIN);
-			priv->hfr_gain = twl6040_read_reg_cache(codec,
+		priv->hfr_gain = twl6040_read_reg_cache(codec,
 						TWL6040_REG_HFRGAIN);
-			twl6040_write(codec, TWL6040_REG_HFLGAIN, 0x1D);
-			twl6040_write(codec, TWL6040_REG_HFRGAIN, 0x1D);
-		} else {
-			twl6040_write(codec, TWL6040_REG_HFLGAIN, priv->hfl_gain);
-			twl6040_write(codec, TWL6040_REG_HFRGAIN, priv->hfr_gain);
-		}
+		priv->hs_gain = twl6040_read_reg_cache(codec,
+						TWL6040_REG_HSGAIN);
+
+		twl6040_write(codec, TWL6040_REG_HFLGAIN, 0x1D);
+		twl6040_write(codec, TWL6040_REG_HFRGAIN, 0x1D);
+		twl6040_write(codec, TWL6040_REG_HSGAIN, 0xFF);
+	} else {
+		twl6040_write(codec, TWL6040_REG_HFLGAIN, priv->hfl_gain);
+		twl6040_write(codec, TWL6040_REG_HFRGAIN, priv->hfr_gain);
+		twl6040_write(codec, TWL6040_REG_HSGAIN, priv->hs_gain);
 	}
 
 	return 0;
@@ -1189,7 +1023,7 @@ static int twl6040_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 			return ret;
 
 		/* headset dac and driver must be in low-power mode */
-		priv->headset_power_mode = 0;
+		headset_power_mode(codec, 0);
 
 		priv->sysclk_constraints = &lp_constraints;
 		break;
@@ -1200,7 +1034,7 @@ static int twl6040_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 			return ret;
 
 		/* headset dac and driver must be in high-performance mode */
-		priv->headset_power_mode = 1;
+		headset_power_mode(codec, 1);
 
 		priv->sysclk_constraints = &hp_constraints;
 		break;
@@ -1314,7 +1148,6 @@ static int twl6040_probe(struct snd_soc_codec *codec)
 	priv->hfl_gain = twl6040_read_reg_cache(codec, TWL6040_REG_HFLGAIN);
 	priv->hfr_gain = twl6040_read_reg_cache(codec, TWL6040_REG_HFRGAIN);
 	priv->hs_gain = twl6040_read_reg_cache(codec, TWL6040_REG_HSGAIN);
-	priv->ear_gain = twl6040_read_reg_cache(codec, TWL6040_REG_EARCTL) << 1;
 
 	INIT_DELAYED_WORK(&priv->delayed_work, twl6040_accessory_work);
 	mutex_init(&priv->mutex);

@@ -92,30 +92,10 @@ static void cpuidle_idle_call(void)
 	target_state->time += (unsigned long long)dev->last_residency;
 	target_state->usage++;
 
-	hrtimer_cancel(&dev->cstate_timer);
-
-	/*
-	 * Give the governor an opportunity to reflect on the outcome
-	 * Do not take into account the wakeups due to the hrtimer, they
-	 * should not impact the predicted idle time.
-	 */
-	if ((!dev->hrtimer_expired) && cpuidle_curr_governor->reflect)
+	/* give the governor an opportunity to reflect on the outcome */
+	if (cpuidle_curr_governor->reflect)
 		cpuidle_curr_governor->reflect(dev);
 	trace_power_end(0);
-}
-
-/**
- * cstate_reassessment_timer - interrupt handler of the cstate hrtimer
- * @handle:	the expired hrtimer
- */
-static enum hrtimer_restart cstate_reassessment_timer(struct hrtimer *handle)
-{
-	struct cpuidle_device *data =
-		container_of(handle, struct cpuidle_device, cstate_timer);
-
-	data->hrtimer_expired = 1;
-
-	return HRTIMER_NORESTART;
 }
 
 /**
@@ -200,16 +180,10 @@ int cpuidle_enable_device(struct cpuidle_device *dev)
 	}
 	dev->last_residency = 0;
 	dev->last_state = NULL;
-	/* enable state by default */
-	dev->enable_state = 1;
 
 	smp_wmb();
 
 	dev->enabled = 1;
-
-	dev->hrtimer_expired = 0;
-	hrtimer_init(&dev->cstate_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	dev->cstate_timer.function = cstate_reassessment_timer;
 
 	enabled_devices++;
 	return 0;

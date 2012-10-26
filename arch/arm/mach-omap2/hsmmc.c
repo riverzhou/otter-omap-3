@@ -18,7 +18,6 @@
 #include <plat/mmc.h>
 #include <plat/omap-pm.h>
 #include <plat/omap_device.h>
-#include <asm/mach-types.h>
 
 #ifdef CONFIG_TIWLAN_SDIO
 #include <linux/mmc/sdio_ids.h>
@@ -180,7 +179,8 @@ static void omap4_hsmmc1_after_set_reg(struct device *dev, int slot,
 		}
 	} else {
 		reg = omap4_ctrl_pad_readl(control_pbias_offset);
-		reg |= (OMAP4_MMC1_PWRDNZ_MASK |
+		reg |= (OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
+			OMAP4_MMC1_PWRDNZ_MASK |
 			OMAP4_MMC1_PBIASLITE_VMODE_MASK |
 			OMAP4_USBC1_ICUSB_PWRDNZ_MASK);
 		omap4_ctrl_pad_writel(reg, control_pbias_offset);
@@ -284,12 +284,6 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 			OMAP4_SDMMC1_DR1_SPEEDCTRL_MASK |
 			OMAP4_SDMMC1_DR2_SPEEDCTRL_MASK);
 		omap4_ctrl_pad_writel(reg, control_mmc1);
-
-		reg = omap4_ctrl_pad_readl(control_pbias_offset);
-		reg &= ~(OMAP4_MMC1_PBIASLITE_PWRDNZ_MASK |
-			OMAP4_MMC1_PWRDNZ_MASK |
-			OMAP4_USBC1_ICUSB_PWRDNZ_MASK);
-		omap4_ctrl_pad_writel(reg, control_pbias_offset);
 	}
 
 	for (c = controllers; c->mmc; c++) {
@@ -318,13 +312,11 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 				"mmc%islot%i", c->mmc, 1);
 
 #ifdef CONFIG_TIWLAN_SDIO
-		if (machine_is_omap_4430sdp()) {
-			if (c->mmc == CONFIG_TIWLAN_MMC_CONTROLLER) {
-				mmc->slots[0].embedded_sdio = &omap_wifi_emb_data;
-				mmc->slots[0].register_status_notify =
-					&omap_wifi_status_register;
-				mmc->slots[0].card_detect = &omap_wifi_status;
-			}
+		if (c->mmc == CONFIG_TIWLAN_MMC_CONTROLLER) {
+			mmc->slots[0].embedded_sdio = &omap_wifi_emb_data;
+			mmc->slots[0].register_status_notify =
+				&omap_wifi_status_register;
+			mmc->slots[0].card_detect = &omap_wifi_status;
 		}
 #endif
 
@@ -438,8 +430,7 @@ void __init omap2_hsmmc_init(struct omap2_hsmmc_info *controllers)
 			mmc->slots[0].before_set_reg = NULL;
 			mmc->slots[0].after_set_reg = NULL;
 #ifdef CONFIG_TIWLAN_SDIO
-			if (machine_is_omap_4430sdp())
-				mmc->slots[0].ocr_mask  = MMC_VDD_165_195;
+			mmc->slots[0].ocr_mask  = MMC_VDD_165_195;
 #endif
 			break;
 		default:

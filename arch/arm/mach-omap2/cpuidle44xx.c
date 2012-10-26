@@ -51,7 +51,6 @@ struct omap4_processor_cx {
 	u32 threshold;
 	u32 flags;
 	const char *desc;
-	u32 hrtimer_timeout;
 };
 
 struct omap4_processor_cx omap4_power_states[OMAP4_MAX_STATES];
@@ -60,13 +59,13 @@ struct powerdomain *mpu_pd, *cpu1_pd, *core_pd;
 
 static struct cpuidle_params cpuidle_params_table[] = {
 	/* C1 - CPU0 WFI + CPU1 OFF + MPU ON   + CORE ON  */
-	{1,	2,	2,	5,	100},
+	{1,	2,	2,	5},
 	/* C2 - CPU0 INA + CPU1 OFF + MPU INA  + CORE INA  */
-	{1,	140,	160,	300,	300},
+	{1,	140,	160,	300},
 	/* C3 - CPU0 OFF + CPU1 OFF + MPU CSWR + CORE OSWR  */
-	{1,	1516,	3230,	15000,	15000},
+	{1,	1516,	3230,	15000},
 	/* C4 - CPU0 OFF + CPU1 OFF + MPU OSWR + CORE OSWR */
-	{1,	1644,	3298,	39000,	39000},
+	{1,	1644,	3298,	39000},
 };
 
 static int omap4_idle_bm_check(void)
@@ -203,8 +202,6 @@ void omap_init_power_states(void)
 			cpuidle_params_table[OMAP4_STATE_C1].wake_latency;
 	omap4_power_states[OMAP4_STATE_C1].threshold =
 			cpuidle_params_table[OMAP4_STATE_C1].threshold;
-	omap4_power_states[OMAP4_STATE_C1].hrtimer_timeout =
-			cpuidle_params_table[OMAP4_STATE_C1].hrtimer_timeout;
 	omap4_power_states[OMAP4_STATE_C1].cpu0_state = PWRDM_POWER_ON;
 	omap4_power_states[OMAP4_STATE_C1].cpu1_state = PWRDM_POWER_OFF;
 	omap4_power_states[OMAP4_STATE_C1].mpu_state = PWRDM_POWER_ON;
@@ -226,8 +223,6 @@ void omap_init_power_states(void)
 			cpuidle_params_table[OMAP4_STATE_C2].wake_latency;
 	omap4_power_states[OMAP4_STATE_C2].threshold =
 			cpuidle_params_table[OMAP4_STATE_C2].threshold;
-	omap4_power_states[OMAP4_STATE_C2].hrtimer_timeout =
-			cpuidle_params_table[OMAP4_STATE_C2].hrtimer_timeout;
 	omap4_power_states[OMAP4_STATE_C2].cpu0_state = PWRDM_POWER_INACTIVE;
 	omap4_power_states[OMAP4_STATE_C2].cpu1_state = PWRDM_POWER_OFF;
 	omap4_power_states[OMAP4_STATE_C2].mpu_state = PWRDM_POWER_INACTIVE;
@@ -250,8 +245,6 @@ void omap_init_power_states(void)
 			cpuidle_params_table[OMAP4_STATE_C3].wake_latency;
 	omap4_power_states[OMAP4_STATE_C3].threshold =
 			cpuidle_params_table[OMAP4_STATE_C3].threshold;
-	omap4_power_states[OMAP4_STATE_C3].hrtimer_timeout =
-			cpuidle_params_table[OMAP4_STATE_C3].hrtimer_timeout;
 	omap4_power_states[OMAP4_STATE_C3].cpu0_state = PWRDM_POWER_OFF;
 	omap4_power_states[OMAP4_STATE_C3].cpu1_state = PWRDM_POWER_OFF;
 	omap4_power_states[OMAP4_STATE_C3].mpu_state = PWRDM_POWER_RET;
@@ -274,8 +267,6 @@ void omap_init_power_states(void)
 			cpuidle_params_table[OMAP4_STATE_C4].wake_latency;
 	omap4_power_states[OMAP4_STATE_C4].threshold =
 			cpuidle_params_table[OMAP4_STATE_C4].threshold;
-	omap4_power_states[OMAP4_STATE_C4].hrtimer_timeout =
-			cpuidle_params_table[OMAP4_STATE_C4].hrtimer_timeout;
 	omap4_power_states[OMAP4_STATE_C4].cpu0_state = PWRDM_POWER_OFF;
 	omap4_power_states[OMAP4_STATE_C4].cpu1_state = PWRDM_POWER_OFF;
 	omap4_power_states[OMAP4_STATE_C4].mpu_state = PWRDM_POWER_RET;
@@ -328,7 +319,6 @@ int __init omap4_idle_init(void)
 							cx->wakeup_latency;
 			state->target_residency = cx->threshold;
 			state->flags = cx->flags;
-			state->hrtimer_timeout = cx->hrtimer_timeout;
 			if (cx->type == OMAP4_STATE_C1)
 				dev->safe_state = state;
 			state->enter = (state->flags & CPUIDLE_FLAG_CHECK_BM) ?

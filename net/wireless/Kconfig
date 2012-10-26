@@ -131,15 +131,6 @@ config WIRELESS_EXT_SYSFS
 	  Say Y if you have programs using it, like old versions of
 	  hal.
 
-config WEXT_GEM
-	bool "Wireless extensions GEM support"
-	default n
-	depends on WEXT_CORE
-	select WEXT_PRIV
-	help
-	  This will enable the usage of GEM cipher using
-	  wireless extentsion (WEXT)
-
 config LIB80211
 	tristate "Common routines for IEEE802.11 drivers"
 	default n

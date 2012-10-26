@@ -183,12 +183,7 @@ static int heapbufmp_ioctl_create(struct heapbufmp_cmd_args *cargs)
 	params.gate = cargs->args.create.knl_gate;
 	handle = heapbufmp_create(&params);
 	cargs->args.create.handle = handle;
-	if (likely(handle != NULL)) {
-		cargs->api_status  = 0;
-	} else {
-		cargs->api_status  = -1;
-		status = -EFAULT;
-	}
+	cargs->api_status  = 0;
 
 name_from_usr_error:
 	if (cargs->args.create.name_len > 0)

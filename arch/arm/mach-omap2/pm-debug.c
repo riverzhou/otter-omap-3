@@ -36,13 +36,15 @@
 
 #include <mach/omap4-common.h>
 
+#include <asm/cputype.h>
+
 #include "prm.h"
 #include "cm.h"
 #include "pm.h"
 
 int omap2_pm_debug;
+u32 gbl_reset_src;
 u32 enable_off_mode;
-u32 volt_off_mode = 1;
 u32 sleep_while_idle;
 u32 wakeup_timer_seconds;
 u32 wakeup_timer_milliseconds;
@@ -307,15 +309,17 @@ static int pm_dbg_show_regs(struct seq_file *s, void *unused)
 	void *store = NULL;
 	int regs;
 	int linefeed;
-	unsigned cmbase, prmbase;
+        unsigned cmbase, prmbase;
 
-	if (cpu_is_omap44xx()) {
-		cmbase = OMAP4430_CM_BASE;
-		prmbase = OMAP4430_PRM_BASE;
-	} else {
-		cmbase = OMAP3430_CM_BASE;
-		prmbase = OMAP3430_PRM_BASE;
-	}
+ 
+       if (cpu_is_omap44xx()) {
+               cmbase = OMAP4430_CM_BASE;
+               prmbase = OMAP4430_PRM_BASE;
+       } else {
+               cmbase = OMAP3430_CM_BASE;
+               prmbase = OMAP3430_PRM_BASE;
+       }
+
 	if (reg_set == 0) {
 		store = kmalloc(pm_dbg_get_regset_size(), GFP_KERNEL);
 		if (!store) {
@@ -336,12 +340,12 @@ static int pm_dbg_show_regs(struct seq_file *s, void *unused)
 		if (pm_dbg_reg_modules[i].type == MOD_CM)
 			seq_printf(s, "MOD: CM_%s (%08x)\n",
 				pm_dbg_reg_modules[i].name,
-				(u32)(cmbase +
+                                (u32)(cmbase +
 				pm_dbg_reg_modules[i].offset));
 		else
 			seq_printf(s, "MOD: PRM_%s (%08x)\n",
 				pm_dbg_reg_modules[i].name,
-				(u32)(prmbase +
+                                (u32)(prmbase +
 				pm_dbg_reg_modules[i].offset));
 
 		for (j = pm_dbg_reg_modules[i].low;
@@ -635,8 +639,16 @@ static int __init pwrdms_setup(struct powerdomain *pwrdm, void *dir)
 static int option_get(void *data, u64 *val)
 {
 	u32 *option = data;
-
-	*val = *option;
+	
+	if(option == &gbl_reset_src)
+	{
+		*val = prm_read_mod_reg(OMAP4430_PRM_DEVICE_MOD,
+			OMAP4_RM_RSTST);
+	}
+	else
+	{
+		*val = *option;
+	}
 
 	return 0;
 }
@@ -644,15 +656,25 @@ static int option_get(void *data, u64 *val)
 static int option_set(void *data, u64 val)
 {
 	u32 *option = data;
+	u32 idcode = read_cpuid(0);
+
+	idcode &= 0xf;
+
+//	if (idcode == 3) {// means 2.3
+//		printk(KERN_DEBUG "???????????%d????????\n",idcode);
+//	}
 
 	if (option == &wakeup_timer_milliseconds && val >= 1000)
 		return -EINVAL;
 
-	if (cpu_is_omap443x() && (omap_type() == OMAP2_DEVICE_TYPE_GP) &&
-		omap_rev() < OMAP4430_REV_ES2_3)
+	if (cpu_is_omap44xx() && (omap_type() == OMAP2_DEVICE_TYPE_GP)
+				&& (idcode < 3)) {
 		*option = 0;
-	else
+		printk(KERN_INFO "2.2 GP CPU, OFF mode disallowed\n");
+	} else {
 		*option = val;
+		printk(KERN_INFO "2.3 GP CPU, OFF mode allowed\n");
+	}
 
 	if (option == &enable_off_mode) {
 		if (cpu_is_omap34xx())
@@ -670,6 +692,12 @@ static int option_set(void *data, u64 val)
 			"to explicitly write values into the debug fs "
 			"entries corresponding to these if they want to see "
 			"them changing according to the VDD voltage\n");
+
+	
+	if(option == &gbl_reset_src)
+	{
+		prm_write_mod_reg(val, OMAP4430_PRM_DEVICE_MOD, OMAP4_RM_RSTST);
+	}
 
 	return 0;
 }
@@ -803,7 +831,7 @@ static int __init pm_dbg_init(void)
 	else if (cpu_is_omap44xx())
 		pm_dbg_reg_modules = omap4_pm_reg_modules;
 	else
-		printk(KERN_ERR "%s: only OMAP3/4 supported\n", __func__);
+		printk(KERN_ERR "%s: only OMAP3 supported\n", __func__);
 
 	d = debugfs_create_dir("pm_debug", NULL);
 	if (IS_ERR(d))
@@ -831,8 +859,6 @@ static int __init pm_dbg_init(void)
 
 		}
 
-	(void) debugfs_create_file("volt_off_mode", S_IRUGO | S_IWUGO, d,
-				   &volt_off_mode, &pm_dbg_option_fops);
 	(void) debugfs_create_file("enable_off_mode", S_IRUGO | S_IWUGO, d,
 				   &enable_off_mode, &pm_dbg_option_fops);
 	(void) debugfs_create_file("sleep_while_idle", S_IRUGO | S_IWUGO, d,
@@ -844,7 +870,9 @@ static int __init pm_dbg_init(void)
 			&pm_dbg_option_fops);
 	(void) debugfs_create_file("enable_sr_vp_debug",  S_IRUGO | S_IWUGO, d,
 				   &enable_sr_vp_debug, &pm_dbg_option_fops);
-
+	(void) debugfs_create_file("gbl_reset_src",  S_IRUGO | S_IWUGO, d,
+				   &gbl_reset_src, &pm_dbg_option_fops);
+	
 	if (cpu_is_omap44xx()) {
 		omap4_pmd_clks_init();
 		debugfs_create_file("pmd_clks_enable", S_IRUGO|S_IWUGO, d,

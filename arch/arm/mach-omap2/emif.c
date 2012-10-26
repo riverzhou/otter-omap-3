@@ -21,7 +21,6 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/notifier.h>
-#include <linux/reboot.h>
 
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>
@@ -31,6 +30,8 @@
 #include <mach/emif.h>
 #include <mach/lpddr2-jedec.h>
 #include <mach/omap4-common.h>
+#include <plat/control.h>
+#include <linux/delay.h>
 
 /* Utility macro for masking and setting a field in a register/variable */
 #define mask_n_set(reg, shift, msk, val) \
@@ -59,6 +60,65 @@ struct omap_device_pm_latency omap_emif_latency[] = {
 		.flags			= OMAP_DEVICE_LATENCY_AUTO_ADJUST,
 	},
 };
+
+//add for the Silicon Bandgap Temperature Measurement
+u8 omap4_ctrl_temp_sensor_single_conv(void)
+{
+	u8 val = 0;
+    u8 celsius = 0;
+	
+	omap_ctrl_writel(0x00000200, OMAP4_CTRL_MODULE_CORE_TEMP_SENSOR);
+	msleep(1);
+	omap_ctrl_writel(0x00000000, OMAP4_CTRL_MODULE_CORE_TEMP_SENSOR);
+
+	val |= omap_ctrl_readl(OMAP4_CTRL_MODULE_CORE_TEMP_SENSOR);
+
+	if(val<=14)
+		celsius = 0;
+	else if(val>=15 && val<=20)
+		celsius = 10;
+	else if(val>=21 && val<=25)
+		celsius = 20;
+	else if(val>=26 && val<=31)
+		celsius = 30;
+	else if(val>=32 && val<=37)
+		celsius = 40;
+	else if(val>=38 && val<=43)
+		celsius = 50;
+	else if(val>=44 && val<=48)
+		celsius = 60;
+	else if(val>=49 && val<=54)
+		celsius = 70;
+	else if(val>=55 && val<=60)
+		celsius = 80;
+	else if(val>=61 && val<=66)
+		celsius = 90;
+	else if(val>=67 && val<=72)
+		celsius = 100;
+	else if(val>=73 && val<=77)
+		celsius = 110;
+	else if(val>=78 && val<=83)
+		celsius = 120;
+	else if(val>=84 && val<=89)
+		celsius = 130;
+	else if(val>=90 && val<=95)
+		celsius = 140;
+	else if(val>=96 && val<=100)
+		celsius = 150;
+	else if(val>=101 && val<=106)
+		celsius = 160;
+	else if(val>=107)
+		celsius = 165;
+	else
+		celsius = 255;
+
+	//pr_info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+	//pr_info("OMAP4_CTRL_MODULE_CORE_TEMP_SENSOR = [0x%x] \n", val);
+	//pr_info("Silicon Temp around [%d - 40] degree Celsius \n", celsius);
+	//pr_info("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+	
+	return celsius;
+}
 
 void do_cancel_out(u32 *num, u32 *den, u32 factor)
 {
@@ -610,9 +670,9 @@ static void setup_registers(u32 emif_nr, struct emif_regs *regs,
 		     base + OMAP44XX_EMIF_PWR_MGMT_CTRL_SHDW);
 
 	/* Enable self refresh mode */
-	__raw_writel(EMIF_PWR_MGMT_CTRL |
-		     (LP_MODE_SELF_REFRESH << OMAP44XX_REG_LP_MODE_SHIFT),
-		     base + OMAP44XX_EMIF_PWR_MGMT_CTRL);
+	__raw_writel(EMIF_PWR_MGMT_CTRL | 0x200,
+		base + OMAP44XX_EMIF_PWR_MGMT_CTRL);
+
 
 	__raw_writel(regs->temp_alert_config,
 		     base + OMAP44XX_EMIF_TEMP_ALERT_CONFIG);
@@ -798,13 +858,6 @@ static irqreturn_t emif_threaded_isr(int irq, void *dev_id)
 		emif_notify_pending &= ~(1 << emif_nr);
 	}
 
-	if (emif_temperature_level[emif_nr] >=
-			SDRAM_TEMP_VERY_HIGH_SHUTDOWN) {
-		pr_emerg("EMIF %d: SDRAM temperature exceeds operating"
-			 "limit.. Shutdown system...\n", emif_nr + 1);
-		kernel_power_off();
-	}
-
 	return IRQ_HANDLED;
 }
 
@@ -837,6 +890,7 @@ static ssize_t emif_temperature_show(struct device *dev,
 				     char *buf)
 {
 	u32 temperature;
+	u8 bandgaptemp = 0;
 	if (dev == &(emif[EMIF1].pdev->dev))
 		temperature = emif_temperature_level[EMIF1];
 	else if (dev == &(emif[EMIF2].pdev->dev))
@@ -844,7 +898,10 @@ static ssize_t emif_temperature_show(struct device *dev,
 	else
 		return 0;
 
-	return snprintf(buf, 20, "%u\n", temperature);
+	bandgaptemp = omap4_ctrl_temp_sensor_single_conv();
+	//printk("Bandgap Temp around [%d -40] degree Celsius\n",bandgaptemp);
+
+	return snprintf(buf, 20, "%u\n%u\n", temperature, bandgaptemp);
 }
 static DEVICE_ATTR(temperature, S_IRUGO, emif_temperature_show, NULL);
 
@@ -1126,11 +1183,9 @@ int do_setup_device_details(u32 emif_nr,
 				   &dev_attr_temperature));
 	kobject_uevent(&(emif[emif_nr].pdev->dev.kobj), KOBJ_ADD);
 
-	if (emif_temperature_level[emif_nr] >= SDRAM_TEMP_VERY_HIGH_SHUTDOWN) {
+	if (emif_temperature_level[emif_nr] == SDRAM_TEMP_VERY_HIGH_SHUTDOWN)
 		pr_emerg("EMIF %d: SDRAM temperature exceeds operating"
-			 "limit.. Needs shutdown...\n", emif_nr + 1);
-	}
-
+			 "limit.. Needs shut down!!!", emif_nr + 1);
 	return 0;
 }
 
@@ -1213,15 +1268,6 @@ static int __init omap_emif_late_init(void)
 	struct voltagedomain *voltdm = omap_voltage_domain_get("core");
 
 	omap_voltage_register_notifier(voltdm, &emif_volt_notifier_block);
-
-	if ((emif_temperature_level[EMIF1] >= SDRAM_TEMP_VERY_HIGH_SHUTDOWN) ||
-		(emif_temperature_level[EMIF2] >= SDRAM_TEMP_VERY_HIGH_SHUTDOWN)) {
-		pr_emerg("SDRAM BOOT temperature exceeds operating"
-			"limit.. Shutdown system...\n");
-
-		kernel_power_off();
-	}
-
 	return 0;
 }
 late_initcall(omap_emif_late_init);

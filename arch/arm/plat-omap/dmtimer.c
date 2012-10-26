@@ -259,6 +259,12 @@ static void omap_dm_timer_write_reg(struct omap_dm_timer *timer, u32 reg,
 	else if (reg >= OMAP_TIMER_STAT_REG)
 		reg += pdata->intr_offset;
 
+	if ((0xFA086000 == timer->io_base)&&(0x00000000 != omap_readl(0x4A009428)&0x00030000)){
+		printk("----------------------WE WERE DEAD HERE!!! TIMER10 IO WITH NO CLOCK!!!!-------------------------------\n");
+		printk("0x4A009428=0x%08X\n",omap_readl(0x4A009428));
+		WARN_ON(1);
+	}
+
 	if (timer->posted) {
 		omap_test_timeout(!(readl(timer->io_base +
 			((OMAP_TIMER_WRITE_PEND_REG +
@@ -576,7 +582,7 @@ int omap_dm_timer_set_source(struct omap_dm_timer *timer, int source)
 	 * When the functional clock disappears, too quick writes seem
 	 * to cause an abort. XXX Is this still necessary?
 	 */
-	__delay(300000);
+	__delay(600000);
 
 	return ret;
 }

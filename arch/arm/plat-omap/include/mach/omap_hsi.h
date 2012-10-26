@@ -132,11 +132,10 @@
 #define HSI_SSI_WAKE_MASK		0xff	/* for SSI */
 #define HSI_WAKE_MASK			0xffff	/* for HSI */
 #define HSI_SET_WAKE_4_WIRES		(0 << 16)
-#define HSI_SET_WAKE_3_WIRES		(1 << 16)
-#define HSI_SET_WAKE_3_WIRES_MASK	0xfffcffff /* 3-wires + ACREADY to 1 */
 #define HSI_SET_WAKE_READY_LVL_0	(0 << 17)
-#define HSI_SET_WAKE_READY_LVL_1	(1 << 17)
-#define HSI_SET_WAKE(channel)		(1 << (channel))
+#define HSI_SET_WAKE(channel)		(1 << (channel) |\
+						HSI_SET_WAKE_4_WIRES |\
+						HSI_SET_WAKE_READY_LVL_0)
 #define HSI_CLEAR_WAKE(channel)		(1 << (channel))
 #define HSI_WAKE(channel)		(1 << (channel))
 
@@ -257,11 +256,6 @@
 #define HSI_HSR_ERROR_TBE		(1 << 4)	/* HSI only */
 #define HSI_HSR_ERROR_RME		(1 << 7)	/* HSI only */
 #define HSI_HSR_ERROR_TME		(1 << 11)	/* HSI only */
-#define HSI_HSR_ERROR_ALL		(HSI_HSR_ERROR_SIG |    \
-					 HSI_HSR_ERROR_FTE |    \
-					 HSI_HSR_ERROR_TBE |    \
-					 HSI_HSR_ERROR_RME |    \
-					 HSI_HSR_ERROR_TME)
 
 #define HSI_HSR_ERRORACK_REG(port)	(HSI_HSR_BASE(port) + 0x0024)
 
@@ -286,13 +280,12 @@
 /* Default FT value: 2 x max_bits_per_frame + 20% margin */
 #define HSI_COUNTERS_FT_DEFAULT		(90 << HSI_COUNTERS_FT_OFFSET)
 #define HSI_COUNTERS_TB_DEFAULT		(6 << HSI_COUNTERS_TB_OFFSET)
-/* Default FB value: 256 consecutives frames */
-#define HSI_COUNTERS_FB_DEFAULT		(0xFF << HSI_COUNTERS_FB_OFFSET)
+#define HSI_COUNTERS_FB_DEFAULT		(8 << HSI_COUNTERS_FB_OFFSET)
 
 #define HSI_HSR_COMBINE_COUNTERS(FB, TB, FT)				  \
-		((((FB) << HSI_COUNTERS_FB_OFFSET) & HSI_COUNTERS_FB_MASK) \
-		 (((TB) << HSI_COUNTERS_TB_OFFSET) & HSI_COUNTERS_TB_MASK) \
-		 (((FT) << HSI_COUNTERS_FT_OFFSET) & HSI_COUNTERS_FT_MASK))
+		(((FB << HSI_COUNTERS_FB_OFFSET) & HSI_COUNTERS_FB_MASK) \
+		 ((TB << HSI_COUNTERS_TB_OFFSET) & HSI_COUNTERS_TB_MASK) \
+		 ((FT << HSI_COUNTERS_FT_OFFSET) & HSI_COUNTERS_FT_MASK))
 /* For SSI */
 #define SSI_SSR_COMBINE_COUNTERS(FT)				  \
 		((FT << HSI_SSI_RX_TIMEOUT_OFFSET) & HSI_SSI_RX_TIMEOUT_MASK)
@@ -360,7 +353,7 @@
 #define HSI_DST_BURST_EN_MASK		0xc000
 #define HSI_DST_SINGLE_ACCESS0		0
 #define HSI_DST_SINGLE_ACCESS		(1 << 14)
-#define HSI_DST_BURST_4x32_BIT		(2 << 14)
+#define HSI_DST_BURST_4X32_BIT		(2 << 14)
 #define HSI_DST_BURST_8x32_BIT		(3 << 14)
 
 #define HSI_DST_MASK			0x1e00
@@ -481,16 +474,15 @@ struct omap_hsi_board_config {
 extern int omap_hsi_config(struct omap_hsi_board_config *hsi_config);
 
 #ifdef CONFIG_OMAP_HSI
-extern int omap_hsi_prepare_suspend(int hsi_port, bool dev_may_wakeup);
-extern int omap_hsi_io_wakeup_check(void);
-extern int omap_hsi_wakeup(int hsi_port);
-extern int omap_hsi_is_io_wakeup_from_hsi(int *hsi_port);
+extern int omap_hsi_prepare_suspend(void);
+extern int omap_hsi_prepare_idle(void);
+extern int omap_hsi_wakeup(void);
+extern int omap_hsi_is_io_wakeup_from_hsi(void);
 #else
-inline int omap_hsi_prepare_suspend(int hsi_port,
-					bool dev_may_wakeup) { return -ENOSYS; }
-inline int omap_hsi_io_wakeup_check(void) { return -ENOSYS; }
-inline int omap_hsi_wakeup(int hsi_port) { return -ENOSYS; }
-inline int omap_hsi_is_io_wakeup_from_hsi(int *hsi_port) { return -ENOSYS; }
+inline int omap_hsi_prepare_suspend(void) { return -ENOSYS; }
+inline int omap_hsi_prepare_idle(void) { return -ENOSYS; }
+inline int omap_hsi_wakeup(void) { return -ENOSYS; }
+inline int omap_hsi_is_io_wakeup_from_hsi(void) { return -ENOSYS; }
 #endif
 
 #endif /* __OMAP_HSI_H__ */

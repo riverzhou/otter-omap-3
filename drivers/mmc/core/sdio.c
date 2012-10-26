@@ -16,7 +16,6 @@
 #include <linux/mmc/card.h>
 #include <linux/mmc/sdio.h>
 #include <linux/mmc/sdio_func.h>
-#include <asm/mach-types.h>
 
 #include "core.h"
 #include "bus.h"
@@ -300,8 +299,7 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 	}
 
 #ifdef CONFIG_TIWLAN_SDIO
-	if (machine_is_omap_4430sdp())
-		card->quirks = host->embedded_sdio_data.quirks;
+	card->quirks = host->embedded_sdio_data.quirks;
 #endif
 	card->type = MMC_TYPE_SDIO;
 
@@ -374,8 +372,7 @@ static int mmc_sdio_init_card(struct mmc_host *host, u32 ocr,
 		}
 		card = oldcard;
 #ifdef CONFIG_TIWLAN_SDIO
-		if (machine_is_omap_4430sdp())
-			return 0;
+		return 0;
 #endif
 	}
 
@@ -521,7 +518,7 @@ static int mmc_sdio_suspend(struct mmc_host *host)
 		}
 	}
 
-	if (!err && mmc_card_keep_power(host) && mmc_card_wake_sdio_irq(host)) {
+	if (!err && host->pm_flags & MMC_PM_KEEP_POWER) {
 		mmc_claim_host(host);
 		sdio_disable_wide(host->card);
 		mmc_release_host(host);
@@ -541,10 +538,10 @@ static int mmc_sdio_resume(struct mmc_host *host)
 	mmc_claim_host(host);
 
 	/* No need to reinitialize powered-resumed nonremovable cards */
-	if (mmc_card_is_removable(host) || !mmc_card_keep_power(host))
+	if (mmc_card_is_removable(host) || !mmc_card_is_powered_resumed(host))
 		err = mmc_sdio_init_card(host, host->ocr, host->card,
-					mmc_card_keep_power(host));
-	else if (mmc_card_keep_power(host) && mmc_card_wake_sdio_irq(host)) {
+				(host->pm_flags & MMC_PM_KEEP_POWER));
+	else if (mmc_card_is_powered_resumed(host)) {
 		/* We may have switched to 1-bit mode during suspend */
 		err = sdio_enable_wide(host->card);
 		if (err > 0) {
@@ -553,10 +550,9 @@ static int mmc_sdio_resume(struct mmc_host *host)
 		}
 	}
 
-#ifdef CONFIG_TIWLAN_SDIO
-	if (machine_is_omap_tabletblaze())
-		if (!err && host->sdio_irqs)
-			mmc_signal_sdio_irq(host);
+#ifndef CONFIG_TIWLAN_SDIO
+	if (!err && host->sdio_irqs)
+		mmc_signal_sdio_irq(host);
 #endif
 	mmc_release_host(host);
 
@@ -590,7 +586,7 @@ static int mmc_sdio_power_restore(struct mmc_host *host)
 
 	mmc_claim_host(host);
 	ret = mmc_sdio_init_card(host, host->ocr, host->card,
-				mmc_card_keep_power(host));
+			(host->pm_flags & MMC_PM_KEEP_POWER));
 	if (!ret && host->sdio_irqs)
 		mmc_signal_sdio_irq(host);
 	mmc_release_host(host);

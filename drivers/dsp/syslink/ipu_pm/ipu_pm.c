@@ -658,9 +658,9 @@ static void ipu_pm_work(struct work_struct *work)
 	if (WARN_ON(params == NULL))
 		return;
 
+	pr_debug("Processing %d msgs\n", kfifo_len(&handle->fifo));
+
 	while (kfifo_len(&handle->fifo) >= sizeof(im)) {
-		pr_debug("%s: Processing: %d msg(s)\n", __func__,
-				(kfifo_len(&handle->fifo) / sizeof(im)));
 		/* set retval for each iteration asumming error */
 		retval = PM_UNSUPPORTED;
 		spin_lock_irq(&handle->lock);
@@ -1344,7 +1344,6 @@ static inline int ipu_pm_get_iva_hd(struct ipu_pm_object *handle,
 				    struct ipu_pm_params *params)
 {
 	int retval;
-
 	if (params->pm_iva_hd_counter) {
 		pr_err("%s %d IVA_HD already requested\n", __func__, __LINE__);
 		return PM_UNSUPPORTED;
@@ -1944,7 +1943,6 @@ static inline int ipu_pm_rel_iva_hd(struct ipu_pm_object *handle,
 				    struct ipu_pm_params *params)
 {
 	int retval;
-
 	if (!params->pm_iva_hd_counter) {
 		pr_err("%s %d IVA_HD not requested\n", __func__, __LINE__);
 		goto error;

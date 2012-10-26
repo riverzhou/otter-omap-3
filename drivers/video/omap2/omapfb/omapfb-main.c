@@ -299,7 +299,7 @@ static struct omapfb_colormode omapfb_colormodes[] = {
 		.blue	= { .length = 8, .offset = 8, .msb_right = 0 },
 		.transp	= { .length = 8, .offset = 0, .msb_right = 0 },
 	}, {
-		.dssmode = OMAP_DSS_COLOR_RGBX24,
+		.dssmode = OMAP_DSS_COLOR_RGBX32,
 		.bits_per_pixel = 32,
 		.red	= { .length = 8, .offset = 24, .msb_right = 0 },
 		.green	= { .length = 8, .offset = 16, .msb_right = 0 },
@@ -397,7 +397,7 @@ static int fb_mode_to_dss_mode(struct fb_var_screeninfo *var,
 		dssmode = OMAP_DSS_COLOR_RGB24P;
 		break;
 	case 32:
-		dssmode = OMAP_DSS_COLOR_RGB24U;
+		dssmode = OMAP_DSS_COLOR_ARGB32;
 		break;
 	default:
 		return -EINVAL;
@@ -747,9 +747,17 @@ int check_fb_var(struct fb_info *fbi, struct fb_var_screeninfo *var)
 	DBG("xres = %d, yres = %d, vxres = %d, vyres = %d\n",
 			var->xres, var->yres,
 			var->xres_virtual, var->yres_virtual);
-
-	var->width = display ? display->panel.width_in_mm : 0;
-	var->height = display ? display->panel.height_in_mm : 0;
+#if 0
+	if (display && display->driver->get_dimension)
+		display->driver->get_dimension(display, &var->width, &var->height);
+	else {
+		var->height = -1;
+		var->width = -1;
+	}
+#else
+        var->width = display ? display->panel.width_in_mm : 0;
+        var->height = display ? display->panel.height_in_mm : 0;
+#endif
 	var->grayscale = 0;
 
 	if (display && display->driver->get_timings) {
@@ -1723,7 +1731,7 @@ static enum omap_color_mode fb_format_to_dss_mode(enum omapfb_color_format fmt)
 		mode = OMAP_DSS_COLOR_RGBA32;
 		break;
 	case OMAPFB_COLOR_RGBX32:
-		mode = OMAP_DSS_COLOR_RGBX24;
+		mode = OMAP_DSS_COLOR_RGBX32;
 		break;
 	default:
 		mode = -EINVAL;
@@ -2129,11 +2137,9 @@ struct omapfb_notifier_block {
 	struct omapfb2_device *fbdev;
 };
 
-static int omapfb_notify_fb(struct fb_info *fbi, struct omap_overlay* ovl,
+static int omapfb_notify_fb(struct fb_info *fbi,
 		unsigned long evt, struct omap_dss_device *dssdev)
 {
-	int ret = NOTIFY_OK;
-
 	switch (evt) {
 	case OMAP_DSS_SIZE_CHANGE:
 		{
@@ -2142,36 +2148,11 @@ static int omapfb_notify_fb(struct fb_info *fbi, struct omap_overlay* ovl,
 			dssdev->driver->get_resolution(dssdev, &w, &h);
 			size_notify(fbi, w, h);
 		}
-		break;
-	case OMAP_DSS_OVL_INFO_RESET:
-		{
-			/* only care about color mode for now */
-			struct fb_var_screeninfo *var = &fbi->var;
-			struct omap_overlay_info info;
-			enum omap_color_mode mode = 0;
+		return NOTIFY_OK;
 
-			if (fb_mode_to_dss_mode(var, &mode)) {
-				DBG("fb_mode_to_dss_mode failed");
-				ret = NOTIFY_BAD;
-				break;
-			}
-
-			ovl->get_overlay_info(ovl, &info);
-
-			if (info.color_mode != mode) {
-				if (dss_mode_to_fb_mode(info.color_mode, var)) {
-					DBG("dss_mode_to_fb_mode failed");
-					ret = NOTIFY_BAD;
-					break;
-				}
-			}
-		}
-		break;
 	default:  /* don't care about other events for now */
-		ret = NOTIFY_DONE;
+		return NOTIFY_DONE;
 	}
-
-	return ret;
 }
 
 static int omapfb_notifier(struct notifier_block *nb,
@@ -2192,8 +2173,7 @@ static int omapfb_notifier(struct notifier_block *nb,
 
 		for (j = 0; j < ofbi->num_overlays; j++) {
 			if (ofbi->overlays[j]->manager->device == dssdev) {
-				r = omapfb_notify_fb(fbi, ofbi->overlays[j],
-							evt, dssdev);
+				r = omapfb_notify_fb(fbi, evt, dssdev);
 				res = max(res, r);
 				break;
 			}

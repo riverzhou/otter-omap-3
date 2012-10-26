@@ -24,14 +24,11 @@
  *
  ******************************************************************************/
 
-#include <linux/version.h>
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,38))
 #ifndef AUTOCONF_INCLUDED
-#include <linux/config.h>
-#endif
+ #include <linux/config.h>
 #endif
 
+#include <linux/version.h>
 #include <asm/io.h>
 #include <asm/page.h>
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,22))
@@ -81,7 +78,7 @@ typedef struct PVRSRV_LINUX_EVENT_OBJECT_TAG
 #endif
     wait_queue_head_t sWait;	
 	struct list_head        sList;
-	IMG_HANDLE		hResItem;				
+	IMG_HANDLE		hResItem;
 	PVRSRV_LINUX_EVENT_OBJECT_LIST *psLinuxEventObjectList;
 } PVRSRV_LINUX_EVENT_OBJECT;
 
@@ -111,7 +108,7 @@ PVRSRV_ERROR LinuxEventObjectListDestroy(IMG_HANDLE hEventObjectList)
 
 	PVRSRV_LINUX_EVENT_OBJECT_LIST *psEventObjectList = (PVRSRV_LINUX_EVENT_OBJECT_LIST *) hEventObjectList ;
 
-	if(psEventObjectList)	
+	if(psEventObjectList)
 	{
 		IMG_BOOL bListEmpty;
 
@@ -119,7 +116,7 @@ PVRSRV_ERROR LinuxEventObjectListDestroy(IMG_HANDLE hEventObjectList)
 		bListEmpty = list_empty(&psEventObjectList->sList);
 		read_unlock(&psEventObjectList->sLock);
 
-		if (!bListEmpty) 
+		if (!bListEmpty)
 		{
 			 PVR_DPF((PVR_DBG_ERROR, "LinuxEventObjectListDestroy: Event List is not empty"));
 			 return PVRSRV_ERROR_UNABLE_TO_DESTROY_EVENT;
@@ -236,9 +233,9 @@ PVRSRV_ERROR LinuxEventObjectSignal(IMG_HANDLE hOSEventObjectList)
 
 	psList = &psLinuxEventObjectList->sList;
 
-	
+
 	read_lock(&psLinuxEventObjectList->sLock);
-	list_for_each(psListEntry, psList) 
+	list_for_each(psListEntry, psList)
 	{       	
 
 		psLinuxEventObject = (PVRSRV_LINUX_EVENT_OBJECT *)list_entry(psListEntry, PVRSRV_LINUX_EVENT_OBJECT, sList);	

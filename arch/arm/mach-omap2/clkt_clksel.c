@@ -113,7 +113,6 @@ u8 _get_div_and_fieldval(struct clk *src_clk, struct clk *clk,
 	 * switch, and if it cannot be found, to fall back to the
 	 * highest divisor.
 	 */
-	max_clkr = clks->rates;
 	for (clkr = clks->rates; clkr->div; clkr++) {
 		if (!(clkr->flags & cpu_mask))
 			continue;
@@ -191,7 +190,7 @@ static u32 _clksel_to_divisor(struct clk *clk, u32 field_val)
 
 	if (!clkr->div) {
 		/* This indicates a data error */
-		pr_debug("clock: Could not find fieldval %d for clock %s parent "
+		WARN(1, "clock: Could not find fieldval %d for clock %s parent "
 		     "%s\n", field_val, clk->name, clk->parent->name);
 		return 0;
 	}

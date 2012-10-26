@@ -42,6 +42,7 @@
 #include <plat/dmtimer.h>
 #include <plat/omap-serial.h>
 #include <plat/control.h>
+#include <plat/omap-pm.h>
 
 #include "../../arch/arm/mach-omap2/mux.h"
 
@@ -55,27 +56,14 @@ static int omap_uart_cts_wakeup(int uart_no, int state);
 
 static inline unsigned int serial_in(struct uart_omap_port *up, int offset)
 {
-	unsigned int val = 0;
-
-	omap_uart_enable_clock_from_ext(up->pdev->id);
-	up->port_reg_access_active = 1;
-
 	offset <<= up->port.regshift;
-	val = readw(up->port.membase + offset);
-
-	up->port_reg_access_active = 0;
-	return val;
+	return readw(up->port.membase + offset);
 }
 
 static inline void serial_out(struct uart_omap_port *up, int offset, int value)
 {
-	omap_uart_enable_clock_from_ext(up->pdev->id);
-	up->port_reg_access_active = 1;
-
 	offset <<= up->port.regshift;
 	writew(value, up->port.membase + offset);
-
-	up->port_reg_access_active = 0;
 }
 
 static inline void serial_omap_clear_fifos(struct uart_omap_port *up)
@@ -351,8 +339,6 @@ static void serial_omap_start_tx(struct uart_port *port)
 				up->uart_dma.uart_dma_tx, 0);
 	/* FIXME: Cache maintenance needed here? */
 	omap_start_dma(up->uart_dma.tx_dma_channel);
-
-	omap_uart_start_inactivity_timer(up->pdev->id);
 }
 
 static unsigned int check_modem_status(struct uart_omap_port *up)
@@ -407,7 +393,7 @@ static inline irqreturn_t serial_omap_irq(int irq, void *dev_id)
 	 * in case if the Idle state is set and the PRCM modul
 	 * just shutdown the ICK because of inactivity.
 	 */
-	omap_uart_enable_clock_from_ext(up->pdev->id);
+	omap_uart_enable_clock_from_irq(up->pdev->id);
 #endif
 
 	iir = serial_in(up, UART_IIR);
@@ -417,7 +403,6 @@ static inline irqreturn_t serial_omap_irq(int irq, void *dev_id)
 	spin_lock_irqsave(&up->port.lock, flags);
 	lsr = serial_in(up, UART_LSR);
 	if (iir & UART_IIR_RLSI) {
-		up->port_rx_active = 1;
 		if (!up->use_dma) {
 			if (lsr & UART_LSR_DR) {
 				receive_chars(up, &lsr);
@@ -435,17 +420,11 @@ static inline irqreturn_t serial_omap_irq(int irq, void *dev_id)
 	}
 
 	check_modem_status(up);
-	if ((lsr & UART_LSR_THRE) && (iir & UART_IIR_THRI)) {
-		up->port_tx_active = 1;
+	if ((lsr & UART_LSR_THRE) && (iir & UART_IIR_THRI))
 		transmit_chars(up);
-	}
 
 	spin_unlock_irqrestore(&up->port.lock, flags);
 	up->port_activity = jiffies;
-	up->port_rx_active = 0;
-	up->port_tx_active = 0;
-
-	omap_uart_start_inactivity_timer(up->pdev->id);
 	return IRQ_HANDLED;
 }
 
@@ -851,7 +830,7 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	/* Protocol, Baud Rate, and Interrupt Settings */
 
-	omap_uart_mdr1_errataset(up->pdev->id, OMAP_MDR1_DISABLE, up->fcr);
+	serial_out(up, UART_OMAP_MDR1, OMAP_MDR1_DISABLE);
 	serial_out(up, UART_LCR, OMAP_UART_LCR_CONF_MDB);
 
 	up->efr = serial_in(up, UART_EFR);
@@ -872,11 +851,9 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	serial_out(up, UART_LCR, cval);
 
 	if (baud > 230400 && baud != 3000000)
-		omap_uart_mdr1_errataset(up->pdev->id, OMAP_MDR1_MODE13X,
-							up->fcr);
+		serial_out(up, UART_OMAP_MDR1, OMAP_MDR1_MODE13X);
 	else
-		omap_uart_mdr1_errataset(up->pdev->id, OMAP_MDR1_MODE16X,
-							up->fcr);
+		serial_out(up, UART_OMAP_MDR1, OMAP_MDR1_MODE16X);
 
 	/* Hardware Flow Control Configuration */
 
@@ -899,10 +876,6 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	}
 
 	serial_omap_set_mctrl(&up->port, up->port.mctrl);
-
-	/* Enable Wake Up Event for all */
-	serial_out(up, UART_OMAP_WER, OMAP_UART_WER_MOD_WKUP);
-
 	/* Software Flow Control Configuration */
 	if (termios->c_iflag & (IXON | IXOFF))
 		serial_omap_configure_xonxoff(up, termios);
@@ -910,45 +883,6 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 	spin_unlock_irqrestore(&up->port.lock, flags);
 	dev_dbg(up->port.dev, "serial_omap_set_termios+%d\n", up->pdev->id);
 }
-/*
- * Work Around for Errata i202 (3430 - 1.12, 3630 - 1.6)
- * The access to uart register after MDR1 Access
- * causes UART to corrupt data.
- *
- * Need a delay =
- * 5 L4 clock cycles + 5 UART functional clock cycle (@48MHz = ~0.2uS)
- * give 5 times as much
- *
- * uart_no : Should be a Zero Based Index Value always.
- */
-void omap_uart_mdr1_errataset(int uart_no, u8 mdr1_val,
-	      u8 fcr_val)
-{
-	struct uart_omap_port *up = ui[uart_no];
-	/* 10 retries, in this the FiFO's should get cleared */
-	u8 timeout = 0x05;
-
-	serial_out(up, UART_OMAP_MDR1, mdr1_val);
-	udelay(1);
-	serial_out(up, UART_FCR, fcr_val | UART_FCR_CLEAR_XMIT |
-	UART_FCR_CLEAR_RCVR);
-	/*
-	 * Wait for FIFO to empty: when empty, RX_FIFO_E bit is 0 and
-	 * TX_FIFO_E bit is 1.
-	 */
-	while (UART_LSR_THRE != (serial_in(up, UART_LSR) &
-		(UART_LSR_THRE | UART_LSR_DR))) {
-		timeout--;
-		if (!timeout) {
-			/* Should *never* happen. we warn and carry on */
-			dev_dbg(up->port.dev, "Errata i202: timedout %x\n",
-			serial_in(up, UART_LSR));
-			break;
-		}
-		udelay(1);
-	}
-}
-EXPORT_SYMBOL(omap_uart_mdr1_errataset);
 
 static void
 serial_omap_pm(struct uart_port *port, unsigned int state,
@@ -956,8 +890,6 @@ serial_omap_pm(struct uart_port *port, unsigned int state,
 {
 	struct uart_omap_port *up = (struct uart_omap_port *)port;
 	unsigned char efr;
-
-	omap_uart_enable_clock_from_ext(up->pdev->id);
 
 	dev_dbg(up->port.dev, "serial_omap_pm+%d\n", up->pdev->id);
 	serial_out(up, UART_LCR, OMAP_UART_LCR_CONF_MDB);
@@ -971,12 +903,7 @@ serial_omap_pm(struct uart_port *port, unsigned int state,
 	serial_out(up, UART_LCR, 0);
 	/* Enable module level wake up */
 	serial_out(up, UART_OMAP_WER,
-			(state != 0) ? OMAP_UART_WER_MOD_WKUP : 0);
-
-	if (state != 0)
-		omap_uart_disable_clock_from_ext(up->pdev->id);
-	else
-		omap_uart_enable_clock_from_ext(up->pdev->id);
+		(state != 0) ? OMAP_UART_WER_MOD_WKUP : 0);
 }
 
 static void serial_omap_release_port(struct uart_port *port)
@@ -1122,9 +1049,6 @@ serial_omap_console_write(struct console *co, const char *s,
 	unsigned int ier;
 	int locked = 1;
 
-	omap_uart_enable_clock_from_ext(up->pdev->id);
-	up->port_tx_active = 1;
-
 	local_irq_save(flags);
 	if (up->port.sysrq)
 		locked = 0;
@@ -1159,9 +1083,6 @@ serial_omap_console_write(struct console *co, const char *s,
 
 	if (locked)
 		spin_unlock(&up->port.lock);
-	up->port_tx_active = 0;
-	up->port_activity = jiffies;
-	omap_uart_start_inactivity_timer(up->pdev->id);
 	local_irq_restore(flags);
 }
 
@@ -1254,17 +1175,11 @@ serial_omap_suspend(struct platform_device *pdev, pm_message_t state)
 	/* Reset the uart wakeup event */
 	omap_up_info->uart_wakeup_event = 0;
 
-	if (up) {
+	if (up)
+	{
 		uart_suspend_port(&serial_omap_reg, &up->port);
-
-		/* If this is the console do not abort suspend is UART
-		 * is active
-		 */
-		if ((!omap_is_console_port(&up->port)) &&
-				(omap_uart_is_enabled(up->pdev->id))) {
-			uart_resume_port(&serial_omap_reg, &up->port);
-			return omap_uart_is_enabled(up->pdev->id);
-		}
+		omap_pm_set_min_bus_tput( &up->pdev->dev, 
+		OCP_INITIATOR_AGENT, 800000);
 	}
 
 	return 0;
@@ -1280,11 +1195,12 @@ static int serial_omap_resume(struct platform_device *dev)
 			omap_up_info->uart_wakeup_event)
 		up->plat_hold_wakelock(up, WAKELK_RESUME);
 
-	if (up) {
-		omap_uart_resume(up->pdev->id);
+	if (up)
+	{
 		uart_resume_port(&serial_omap_reg, &up->port);
+		omap_pm_set_min_bus_tput( &up->pdev->dev, 
+		OCP_INITIATOR_AGENT, 0);
 	}
-
 	return 0;
 }
 
@@ -1432,12 +1348,11 @@ static void uart_tx_dma_callback(int lch, u16 ch_status, void *data)
 		 * in case if the Idle state is set and the PRCM modul
 		 * just shutdown the ICK because of inactivity.
 		 */
-		omap_uart_enable_clock_from_ext(up->pdev->id);
+		omap_uart_enable_clock_from_irq(up->pdev->id);
 #endif
 
 		omap_stop_dma(up->uart_dma.tx_dma_channel);
 		serial_omap_continue_tx(up);
-		omap_uart_start_inactivity_timer(up->pdev->id);
 	}
 	up->port_activity = jiffies;
 	return;
@@ -1503,12 +1418,6 @@ static int serial_omap_probe(struct platform_device *pdev)
 	up->port.uartclk = omap_up_info->uartclk;
 	up->uart_dma.uart_base = mem->start;
 	up->plat_hold_wakelock = omap_up_info->plat_hold_wakelock;
-	/* By Default Keep This Actvive, The time would check this */
-	up->port_tx_active      = 0;
-	/* By Default Keep This Actvive, The time would check this */
-	up->port_rx_active      = 0;
-	up->port_reg_access_active = 0;
-	up->try_locked = 0;
 	/* Initialise this to zero, would be initialsed
 	 * to the corrcet value at set_stermios.
 	 */
@@ -1521,7 +1430,6 @@ static int serial_omap_probe(struct platform_device *pdev)
 		up->uart_dma.tx_threshold = omap_up_info->omap4_tx_threshold;
 		up->uart_dma.rx_buf_size = omap_up_info->dma_rx_buf_size;
 		up->uart_dma.rx_poll_rate = omap_up_info->dma_rx_poll_rate;
-		up->uart_dma.rx_timeout = omap_up_info->dma_rx_timeout;
 		spin_lock_init(&(up->uart_dma.tx_lock));
 		spin_lock_init(&(up->uart_dma.rx_lock));
 		up->uart_dma.tx_dma_channel = OMAP_UART_DMA_CH_FREE;
@@ -1598,12 +1506,16 @@ int omap_uart_cts_wakeup(int uart_no, int state)
 
 		if (omap_up_info->cts_padconf & 0x2) {
 			omap_up_info->cts_padvalue = 0xFFFF0000 & v;
-			v |= (((OMAP_WAKEUP_EN | OMAP_OFF_PULL_EN |
+//KC1 SOC off-mode
+//			v |= (((OMAP_WAKEUP_EN | OMAP_OFF_PULL_EN |
+			v |= (((OMAP_OFF_PULL_EN |
 				OMAP_OFF_PULL_UP | OMAP_OFFOUT_EN |
 				OMAP_OFF_EN | OMAP_PULL_UP)) << 16);
 		} else {
 			omap_up_info->cts_padvalue = 0x0000FFFF & v;
-			v |= ((OMAP_WAKEUP_EN | OMAP_OFF_PULL_EN |
+//KC1 SOC off-mode
+//			v |= ((OMAP_WAKEUP_EN | OMAP_OFF_PULL_EN |
+			v |= ((OMAP_OFF_PULL_EN |
 				OMAP_OFF_PULL_UP | OMAP_OFFOUT_EN |
 				OMAP_OFF_EN | OMAP_PULL_UP));
 		}

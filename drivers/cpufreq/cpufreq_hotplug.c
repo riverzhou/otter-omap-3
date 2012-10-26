@@ -561,7 +561,7 @@ static void dbs_check_cpu(struct cpu_dbs_info_s *this_dbs_info)
 	/* check for frequency decrease */
 	if (avg_load < dbs_tuners_ins.down_threshold) {
 		/* are we at the minimum frequency already? */
-		if (policy->cur <= policy->min) {
+		if (policy->cur == policy->min) {
 			/* should we disable auxillary CPUs? */
 			if (num_online_cpus() > 1 && hotplug_out_avg_load <
 					dbs_tuners_ins.down_threshold) {
@@ -637,7 +637,7 @@ static inline void dbs_timer_init(struct cpu_dbs_info_s *dbs_info)
 	INIT_DELAYED_WORK_DEFERRABLE(&dbs_info->work, do_dbs_timer);
 	INIT_WORK(&dbs_info->cpu_up_work, do_cpu_up);
 	INIT_WORK(&dbs_info->cpu_down_work, do_cpu_down);
-	if (dbs_info->boost_applied)
+	if (!dbs_info->boost_applied)
 		delay = usecs_to_jiffies(dbs_tuners_ins.boost_timeout);
 	queue_delayed_work_on(dbs_info->cpu, khotplug_wq, &dbs_info->work,
 	delay);

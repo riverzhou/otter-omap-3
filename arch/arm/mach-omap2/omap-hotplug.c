@@ -18,7 +18,6 @@
 #include <linux/errno.h>
 #include <linux/smp.h>
 #include <linux/completion.h>
-#include <linux/device.h>
 
 #include <asm/cacheflush.h>
 #include <mach/omap4-common.h>

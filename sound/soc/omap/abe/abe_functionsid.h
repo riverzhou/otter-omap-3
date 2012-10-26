@@ -78,23 +78,17 @@
 #define C_ABE_FW_FUNCTION_synchronize_pointers              15
 #define C_ABE_FW_FUNCTION_VIBRA2                            16
 #define C_ABE_FW_FUNCTION_VIBRA1                            17
-#define C_ABE_FW_FUNCTION_IIR_SRC_MIC                       18
-#define C_ABE_FW_FUNCTION_wrappers                          19
-#define C_ABE_FW_FUNCTION_ASRC_DL_wrapper                   20
-#define C_ABE_FW_FUNCTION_ASRC_UL_wrapper                   21
-#define C_ABE_FW_FUNCTION_mem_init                          22
-#define C_ABE_FW_FUNCTION_debug_vx_asrc                     23
-#define C_ABE_FW_FUNCTION_IIR_SRC2                          24
-#define C_ABE_FW_FUNCTION_ASRC_DL_wrapper_sibling           25
-#define C_ABE_FW_FUNCTION_ASRC_UL_wrapper_sibling           26
-#define C_ABE_FW_FUNCTION_FIR6                              27
-#define C_ABE_FW_FUNCTION_SRC44P1                           28
-#define C_ABE_FW_FUNCTION_SRC44P1_1211                      29
-#define C_ABE_FW_FUNCTION_SRC44P1_PP                        30
-#define C_ABE_FW_FUNCTION_SRC44P1_1211_PP                   31
-#define C_ABE_FW_FUNCTION_CHECK_IIR_LEFT                    32
-#define C_ABE_FW_FUNCTION_CHECK_IIR_RIGHT                   33
-#define C_ABE_FW_FUNCTION_FIR12_2                           34
+#define C_ABE_FW_FUNCTION_APS_core                          18
+#define C_ABE_FW_FUNCTION_IIR_SRC_MIC                       19
+#define C_ABE_FW_FUNCTION_wrappers                          20
+#define C_ABE_FW_FUNCTION_ASRC_DL_wrapper                   21
+#define C_ABE_FW_FUNCTION_ASRC_UL_wrapper                   22
+#define C_ABE_FW_FUNCTION_mem_init                          23
+#define C_ABE_FW_FUNCTION_debug_vx_asrc                     24
+#define C_ABE_FW_FUNCTION_IIR_SRC2                          25
+#define C_ABE_FW_FUNCTION_ASRC_DL_wrapper_sibling           26
+#define C_ABE_FW_FUNCTION_ASRC_UL_wrapper_sibling           27
+#define C_ABE_FW_FUNCTION_FIR6                              28
 /*
  *    COPY function ID definitions
  */
@@ -119,5 +113,4 @@
 #define ROUTE_MM_UL_CFPID                                   18
 #define IO_IP_CFPID                                         19
 #define COPY_UNDERFLOW_CFPID                                20
-#define COPY_MCPDM_DL_HF_PDL1_CFPID                         21
 #endif /* _ABE_FUNCTIONSID_H_ */

@@ -9,6 +9,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/io.h>
 #include <linux/pm.h>
 #include <linux/suspend.h>
 #include <linux/module.h>
@@ -25,7 +26,6 @@
 #include <plat/powerdomain.h>
 #include <plat/clockdomain.h>
 #include <plat/serial.h>
-#include <plat/temperature_sensor.h>
 #include <plat/common.h>
 #include <plat/usb.h>
 #include <plat/display.h>
@@ -43,6 +43,7 @@
 #include "cm-regbits-44xx.h"
 #include "prm-regbits-44xx.h"
 #include "clock.h"
+#include "scrm_44xx.h"
 
 void *so_ram_address;
 
@@ -64,9 +65,49 @@ static struct powerdomain *core_pwrdm, *per_pwrdm;
 
 static struct voltagedomain *vdd_mpu, *vdd_iva, *vdd_core;
 
-static struct clockdomain *l3_emif_clkdm;
+static u32 sleep_aborted_irq_pending=0;
+
+static bool suspend = 0;
+static u32 suspend_fail_count = 0;
 
 #define MAX_IOPAD_LATCH_TIME 1000
+
+u32 omap4_check_pending_GIC_irq(void)
+{
+	/* look at all pending Shared Peripheral Interrupts CPU0 => IRQ0 to IRQ127 from the GIC and wakeup able from the OMAP */
+	/* set a flag if at least one is detected */
+	
+	u32 gic_pending_flagged = 0;  
+	u32 max_spi_irq_gic,max_spi_reg_gic,reg_index_gic;
+	u32 reg_gic_pending_irq[4]={0};
+	u32 reg_gic_cpu_pending = 0;
+
+
+	max_spi_irq_gic = readl(gic_dist_base_addr + GIC_DIST_CTR) & 0x1f;
+	max_spi_irq_gic = (max_spi_irq_gic + 1) * 32;
+	if (max_spi_irq_gic > max(1020, NR_IRQS))
+		max_spi_irq_gic = max(1020, NR_IRQS);
+	max_spi_irq_gic = (max_spi_irq_gic - 32);
+	max_spi_reg_gic = max_spi_irq_gic / 32;
+	
+	for (reg_index_gic = 0; reg_index_gic < max_spi_reg_gic; reg_index_gic++)
+	{
+		reg_gic_pending_irq[reg_index_gic] = (readl(gic_dist_base_addr +
+					GIC_DIST_PENDING_SET + 4 * (reg_index_gic+1)) & omap_readl(0x48281010 + (reg_index_gic*4)));
+
+		if (reg_gic_pending_irq[reg_index_gic] != 0x0)
+			gic_pending_flagged++;
+	}
+
+	/* look for pending irqs on GIC from cpu0 avoiding spurious IRQs (1022 or 1023) */
+	reg_gic_cpu_pending = omap_readl(0x48240100 + GIC_CPU_HIGHPRI);
+	if (((reg_gic_cpu_pending & 0x3FF) < 0x3FE) && ((reg_gic_cpu_pending & 0x1C00) == 0x0))
+			gic_pending_flagged++;
+	
+	return gic_pending_flagged; 
+						
+}
+
 
 /**
  * omap4_device_off_set_state -
@@ -116,6 +157,8 @@ u32 omap4_device_off_read_next_state(void)
 
 int omap4_can_sleep(void)
 {
+	if (!omap_uart_can_sleep())
+		return 0;
 	return 1;
 }
 
@@ -213,8 +256,6 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 	core_next_state = pwrdm_read_next_pwrst(core_pwrdm);
 	mpu_next_state = pwrdm_read_next_pwrst(mpu_pwrdm);
 
-	if (!l3_emif_clkdm)
-		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
 
 	if (mpu_next_state < PWRDM_POWER_INACTIVE) {
 		/* Disable SR for MPU VDD */
@@ -236,28 +277,10 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 		 * optimized.
 		 */
 
-		if (cpu_is_omap446x()) {
-			omap_temp_sensor_prepare_idle();
-
-		       /*
-			* Since we have random crashes and freezes
-			* on trimmed 4460 SOM's keep SD
-			* between MPU and EMIF during non active
-			* states.
-			*/
-
-			/* Configures MEMIF clockdomain in SW_WKUP */
-			omap2_clkdm_wakeup(l3_emif_clkdm);
-
-			/* Enable SD for MPU towards EMIF */
-			cm_rmw_mod_reg_bits(OMAP4430_MEMIF_STATDEP_MASK,
-					    (1 << OMAP4430_MEMIF_STATDEP_SHIFT),
-					    OMAP4430_CM1_MPU_MOD,
-					    OMAP4_CM_MPU_STATICDEP_OFFSET);
-
-			/* Configures MEMIF clockdomain back to HW_AUTO */
-			omap2_clkdm_allow_idle(l3_emif_clkdm);
-		}
+		omap_uart_prepare_idle(0);
+		omap_uart_prepare_idle(1);
+		omap_uart_prepare_idle(2);
+		omap_uart_prepare_idle(3);
 
 		if (omap4_device_off_read_next_state()) {
 			omap2_gpio_prepare_for_idle(1);
@@ -272,7 +295,6 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 
 		omap4_trigger_ioctrl();
 	}
-
 	if (core_next_state < PWRDM_POWER_INACTIVE) {
 		/* Disable SR for CORE and IVA VDD*/
 		omap_smartreflex_disable(vdd_iva);
@@ -303,38 +325,28 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 	if (omap4_device_off_read_next_state()) {
 		omap4_prcm_prepare_off();
 		/* Save the device context to SAR RAM */
-		if (omap4_sar_save())
-			goto restore_state;
+		omap4_sar_save();
 		omap4_sar_overwrite();
+	}
 
-		/* Workaround for IVA AUTO RETENTION issue in OFF mode.
-		Present configuration lets IVA VD to transition from RET->OFF or ON->OFF
-		depending on the selected low power state. Disabling the AUTO_RETENTION
-		control for IVA voltage domain throughout so that PRCM voltage manager
-		state machine will never hit RETENTION state for IVA. During OFF mode
-		entry, IVA voltage domain will directly transition from ON -> OFF state */
+	if (suspend == 1)
+		pm_dbg_regset_save(1);
 
-		cm_rmw_mod_reg_bits(OMAP4430_CLKTRCTRL_MASK,
-				OMAP34XX_CLKSTCTRL_FORCE_WAKEUP << OMAP4430_CLKTRCTRL_SHIFT,
-				OMAP4430_CM2_IVAHD_MOD,
-				OMAP4_CM_IVAHD_CLKSTCTRL_OFFSET);
-		udelay(100);
-
-		/* disable AUTO RET for IVA */
-		prm_rmw_mod_reg_bits(OMAP4430_AUTO_CTRL_VDD_IVA_L_MASK,
-				0x0 << OMAP4430_AUTO_CTRL_VDD_IVA_L_SHIFT,
-				OMAP4430_PRM_DEVICE_MOD,
-				OMAP4_PRM_VOLTCTRL_OFFSET);
-
-		cm_rmw_mod_reg_bits(OMAP4430_CLKTRCTRL_MASK,
-				OMAP34XX_CLKSTCTRL_FORCE_SLEEP << OMAP4430_CLKTRCTRL_SHIFT,
-				OMAP4430_CM2_IVAHD_MOD,
-				OMAP4_CM_IVAHD_CLKSTCTRL_OFFSET);
-		udelay(100);
+ /*  check any pending IRQ from the GIC that could prevent the CPU0 to go in low power state, abort the sleep transition in this case 
+  *   check any IO pending IRQ wakeup from the PRM, abort the sleep transition in  this case 
+  */ 
+	if ((omap_readl((u32)(OMAP4430_PRM_IRQSTATUS_MPU - L4_44XX_VIRT + L4_44XX_PHYS)) & 0x200 ) || (omap4_check_pending_GIC_irq() > 0))
+	{	
+		sleep_aborted_irq_pending++;
+		goto restore;
 	}
 
 	omap4_enter_lowpower(cpu, power_state);
 
+	if (suspend == 1) 
+		pm_dbg_regset_save(2);
+
+restore:
 	if (omap4_device_off_read_prev_state()) {
 		omap4_prcm_resume_off();
 #ifdef CONFIG_PM_DEBUG
@@ -342,7 +354,8 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state)
 #endif
 	}
 
-restore_state:
+
+
 
 	/* FIXME  This call is not needed now for retention support and global
 	 * suspend resume support. All the required actions are taken based
@@ -369,26 +382,17 @@ restore_state:
 				OMAP4430_PRM_DEVICE_MOD,
 				OMAP4_PRM_IO_PMCTRL_OFFSET);
 
-		if (cpu_is_omap446x()) {
-			omap_temp_sensor_resume_idle();
+		omap_uart_resume_idle(0);
+		omap_uart_resume_idle(1);
+		omap_uart_resume_idle(2);
+		omap_uart_resume_idle(3);
 
-			/* Configures MEMIF clockdomain in SW_WKUP */
-			omap2_clkdm_wakeup(l3_emif_clkdm);
-
-			/* Disable SD for MPU towards EMIF */
-			cm_rmw_mod_reg_bits(OMAP4430_MEMIF_STATDEP_MASK, 0,
-					    OMAP4430_CM1_MPU_MOD,
-					    OMAP4_CM_MPU_STATICDEP_OFFSET);
-
-			/* Configures MEMIF clockdomain back to HW_AUTO */
-			omap2_clkdm_allow_idle(l3_emif_clkdm);
-		}
 	}
 
 	if (core_next_state < PWRDM_POWER_INACTIVE) {
 
 		if (!omap4_device_off_read_next_state()) {
-				/* Disable AUTO RET for IVA and CORE */
+			/* Disable AUTO RET for IVA and CORE */
 			prm_rmw_mod_reg_bits(OMAP4430_AUTO_CTRL_VDD_IVA_L_MASK,
 			0x0,
 			OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_VOLTCTRL_OFFSET);
@@ -402,7 +406,6 @@ restore_state:
 		omap_smartreflex_enable(vdd_core);
 	}
 
-	omap_uart_resume_idle();
 
 	if (mpu_next_state < PWRDM_POWER_INACTIVE) {
 		if (!omap4_device_off_read_next_state())
@@ -412,7 +415,7 @@ restore_state:
 			OMAP4430_PRM_DEVICE_MOD, OMAP4_PRM_VOLTCTRL_OFFSET);
 		/* Enable SR for MPU VDD */
 		omap_smartreflex_enable(vdd_mpu);
-	}
+	}		
 
 	return;
 }
@@ -429,10 +432,14 @@ static irqreturn_t prcm_interrupt_handler (int irq, void *dev_id)
 
 	/* Check if a IO_ST interrupt */
 	if (irqstatus_mpu & OMAP4430_IO_ST_MASK) {
-#ifdef CONFIG_OMAP_HSI_DEVICE
+		/* Re-enable UART3 */
+		omap_writel(0x2, 0x4A009550);
+		omap_writel(0xD, 0x48020054);
+
 		/* Modem HSI wakeup */
-		omap_hsi_io_wakeup_check();
-#endif
+		if (omap_hsi_is_io_wakeup_from_hsi())
+			omap_hsi_wakeup();
+
 		/* usbhs remote wakeup */
 		usbhs_wakeup();
 		omap4_trigger_ioctrl();
@@ -480,10 +487,8 @@ static int omap4_pm_suspend(void)
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_GPT1);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_PRCM);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_SYS_1N);
-#ifdef CONFIG_OMAP_HSI_DEVICE
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_HSI_P1);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_HSI_DMA);
-#endif
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_EMIF4_1);
 	omap4_wakeupgen_set_interrupt(cpu_id, OMAP44XX_IRQ_EMIF4_2);
 
@@ -522,6 +527,8 @@ static int omap4_pm_suspend(void)
 		}
 	}
 
+	suspend = 1;
+
 	/*
 	 * To Ensure that we don't attempt suspend when CPU1 is
 	 * not in OFF state to avoid un-supported H/W mode
@@ -530,23 +537,36 @@ static int omap4_pm_suspend(void)
 	if (cpu1_state != PWRDM_POWER_OFF)
 		goto restore;
 	omap_uart_prepare_suspend();
+	omap_hsi_prepare_suspend();
 
 	/* Enable Device OFF */
-	if (enable_off_mode && volt_off_mode)
+	if (enable_off_mode)
 		omap4_device_off_set_state(1);
 
 	omap4_enter_sleep(0, PWRDM_POWER_OFF);
 
+	suspend = 0;
+
+	if ((pwrdm_read_prev_pwrst(core_pwrdm) > 1) && (sleep_aborted_irq_pending == 0))
+		suspend_fail_count++;
+
 	/* Disable Device OFF state*/
-	if (enable_off_mode && volt_off_mode)
+	if (enable_off_mode)
 		omap4_device_off_set_state(0);
 
 restore:
 	/* Print the previous power domain states */
+	pr_info("suspend_core_fail_count :%d \n", suspend_fail_count); 
+	if (sleep_aborted_irq_pending)
+	{
+		pr_info("!!!!!!! Suspend aborted because of pending IRQ in GIC \n");
+		sleep_aborted_irq_pending = 0;
+	}
+	
 	pr_info("Read Powerdomain states as ...\n");
 	pr_info("0 : OFF, 1 : RETENTION, 2 : ON-INACTIVE, 3 : ON-ACTIVE\n");
-	pr_info("DEVICE-OFF hit:%s (%d)\n", omap4_device_off_read_prev_state() ?
-				       "yes" : "no", omap4_device_off_counter);
+        pr_info("DEVICE-OFF hit:%s (%d)\n", omap4_device_off_read_prev_state() ?
+                                       "yes" : "no", omap4_device_off_counter);
 	list_for_each_entry(pwrst, &pwrst_list, node) {
 		state = pwrdm_read_prev_pwrst(pwrst->pwrdm);
 		if (state == -EINVAL) {
@@ -803,6 +823,13 @@ static void __init prcm_setup_regs(void)
 	 */
 	prm_write_mod_reg(0x3, OMAP4430_PRM_DEVICE_MOD,
 				OMAP4_PRM_PWRREQCTRL_OFFSET);
+
+
+	/*Set setuptime and downtime into CLKSETUPTIME register*/
+	__raw_writel(0x00050140, OMAP4_SCRM_CLKSETUPTIME);
+
+	/*Set wakeuptime and sleeptime into PMICSETUPTIME register*/
+	__raw_writel(0x00200020, OMAP4_SCRM_PMICSETUPTIME);
 }
 
 /**
@@ -817,105 +844,60 @@ static void __init prcm_clear_statdep_regs(void)
 	return;
 #else
 	u32 reg;
-	struct clockdomain *l3_init_clkdm, *l4_per_clkdm;
 
 	pr_info("%s: Clearing static depndencies\n", __func__);
 
-	/* PRCM requires target clockdomain to be woken up before
-	 * changing its Static Dependencies settings
-	 */
-
-	/* Note: Domains not built with SW_WKUP capability like
-	* L3_1, L3_2, L4_CFG and L4_WKUP may stall idle transition
-	* during 1 idle cycle if SD is changed while domain is OFF
-	*/
-
-	if (!l3_emif_clkdm)
-		l3_emif_clkdm = clkdm_lookup("l3_emif_clkdm");
-
-	l3_init_clkdm = clkdm_lookup("l3_init_clkdm");
-	l4_per_clkdm = clkdm_lookup("l4_per_clkdm");
-
-	/* Configures MEMIF clockdomain in SW_WKUP */
-	omap2_clkdm_wakeup(l3_emif_clkdm);
-
-	/* Configures L3INIT clockdomain in SW_WKUP */
-	omap2_clkdm_wakeup(l3_init_clkdm);
-
-	/* Configures L4_PER clockdomain in SW_WKUP */
-	omap2_clkdm_wakeup(l4_per_clkdm);
-
-	/* Disable MPU and Ducati Static dependencies since
-	 * Asynchronous Bridge is safe on OMAP4460
-	 */
-	if (!cpu_is_omap443x()) {
-		/* MPU towards EMIF clockdomain */
-		reg = OMAP4430_MEMIF_STATDEP_MASK;
-		cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM1_MPU_MOD,
-			OMAP4_CM_MPU_STATICDEP_OFFSET);
-
-		/* Ducati towards EMIF clockdomain */
-		reg = OMAP4430_MEMIF_STATDEP_MASK;
-		cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM2_CORE_MOD,
-			OMAP4_CM_DUCATI_STATICDEP_OFFSET);
-	}
-
-	/* Disable MPU and Ducati Static dependencies
-	 * towards L4CFG and L4WKUP on OMAP4460
-	 */
-	if (!cpu_is_omap443x()) {
 #if 0
-		/* MPU towards L4CFG and L4WKUP clockdomains */
-		reg = OMAP4430_L4CFG_STATDEP_MASK |
-			OMAP4430_L4WKUP_STATDEP_MASK;
-#else
-		/* MPU towards L4CFG clockdomains */
-		reg = OMAP4430_L4CFG_STATDEP_MASK;
-
-		/* Note: MPU towards L4WKUP needed for OFF mode */
-#endif
-		cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM1_MPU_MOD,
-			OMAP4_CM_MPU_STATICDEP_OFFSET);
-
-		/* Ducati towards L4CFG and L4WKUP clockdomains */
-		reg = OMAP4430_L4CFG_STATDEP_MASK |
-			OMAP4430_L4WKUP_STATDEP_MASK;
-		cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM2_CORE_MOD,
-			OMAP4_CM_DUCATI_STATICDEP_OFFSET);
-	}
-
-	/* SDMA towards EMIF, L3_1, L4CFG, L4WKUP, L3INIT and
-	 * L4PER clockdomains
+	/*
+	 * REVISIT: Seen SGX issues with MPU -> EMIF. Keeping
+	 * it enabled.
+	 * REVISIT: Seen issue with MPU/DSP -> L3_2 and L4CFG. 
+	 * Keeping them enabled
 	 */
+	/* MPU towards EMIF clockdomains */
+	reg = OMAP4430_MEMIF_STATDEP_MASK;
+	cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM1_MPU_MOD,
+		OMAP4_CM_MPU_STATICDEP_OFFSET);
+#endif
+
+	 /*
+	  * REVISIT: Issue seen with Ducati towards EMIF, L3_2, L3_1,
+	  * L4CFG and L4WKUP static
+	  * dependency. Keep it enabled as of now.
+	  */
+#if 0
+	/* Ducati towards EMIF, L3_2, L3_1, L4CFG and L4WKUP clockdomains */
 	reg = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_1_STATDEP_MASK
-		| OMAP4430_L4CFG_STATDEP_MASK | OMAP4430_L4WKUP_STATDEP_MASK
-		| OMAP4430_L4PER_STATDEP_MASK | OMAP4430_L3INIT_STATDEP_MASK;
+		| OMAP4430_L3_2_STATDEP_MASK | OMAP4430_L4CFG_STATDEP_MASK
+		| OMAP4430_L4WKUP_STATDEP_MASK;
+	cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM2_CORE_MOD,
+		OMAP4_CM_DUCATI_STATICDEP_OFFSET);
+#endif
+
+	/* SDMA towards EMIF, L3_2, L3_1, L4CFG, L4WKUP, L3INIT
+	 * and L4PER clockdomains
+	*/
+	reg = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_1_STATDEP_MASK
+		| OMAP4430_L3_2_STATDEP_MASK | OMAP4430_L4CFG_STATDEP_MASK
+		| OMAP4430_L4WKUP_STATDEP_MASK | OMAP4430_L4PER_STATDEP_MASK
+		| OMAP4430_L3INIT_STATDEP_MASK;
 	cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM2_CORE_MOD,
 		OMAP4_CM_SDMA_STATICDEP_OFFSET);
 
-	/* C2C towards EMIF clockdomain */
+	/* C2C towards EMIF clockdomains */
 	cm_rmw_mod_reg_bits(OMAP4430_MEMIF_STATDEP_MASK, 0,
 		OMAP4430_CM2_CORE_MOD, OMAP4_CM_D2D_STATICDEP_OFFSET);
 
-	/* C2C_RESTORE towards EMIF clockdomain */
+	/* C2C_STATICDEP_RESTORE towards EMIF clockdomains */
 	cm_rmw_mod_reg_bits(OMAP4430_MEMIF_STATDEP_MASK, 0,
-		OMAP4430_CM2_RESTORE_MOD,
-		OMAP4_CM_D2D_STATICDEP_RESTORE_OFFSET);
+			OMAP4430_CM2_RESTORE_MOD,
+			OMAP4_CM_D2D_STATICDEP_RESTORE_OFFSET);
 
-	/* SDMA_RESTORE towards EMIF, L3_1, L4_CFG, L4WKUP clockdomains */
+	 /* SDMA_RESTORE towards EMIF, L3_1, L4_CFG,L4WKUP clockdomains */
 	reg = OMAP4430_MEMIF_STATDEP_MASK | OMAP4430_L3_1_STATDEP_MASK
 		| OMAP4430_L4CFG_STATDEP_MASK | OMAP4430_L4WKUP_STATDEP_MASK;
 	cm_rmw_mod_reg_bits(reg, 0, OMAP4430_CM2_RESTORE_MOD,
 		OMAP4_CM_SDMA_STATICDEP_RESTORE_OFFSET);
-
-	/* Configures MEMIF clockdomain back to HW_AUTO */
-	omap2_clkdm_allow_idle(l3_emif_clkdm);
-
-	/* Configures L3INIT clockdomain back to HW_AUTO */
-	omap2_clkdm_allow_idle(l3_init_clkdm);
-
-	/* Configures L4_PER clockdomain back to HW_AUTO */
-	omap2_clkdm_allow_idle(l4_per_clkdm);
 #endif
 };
 
@@ -933,14 +915,13 @@ static int __init omap4_pm_init(void)
 	if (!cpu_is_omap44xx())
 		return -ENODEV;
 
-	enable_off_mode = 0;
-
 	pr_err("Power Management for TI OMAP4.\n");
 	mpu_pwrdm = pwrdm_lookup("mpu_pwrdm");
 	cpu0_pwrdm = pwrdm_lookup("cpu0_pwrdm");
 	cpu1_pwrdm = pwrdm_lookup("cpu1_pwrdm");
 	core_pwrdm = pwrdm_lookup("core_pwrdm");
 	per_pwrdm = pwrdm_lookup("l4per_pwrdm");
+
 
 #ifdef CONFIG_PM
 	prcm_setup_regs();
@@ -997,7 +978,8 @@ static int __init omap4_pm_init(void)
 	}
 
 	omap4_mpuss_init();
-	omap4_pm_off_mode_enable(enable_off_mode);
+	pm_dbg_regset_init(1);
+	pm_dbg_regset_init(2);
 #endif
 
 #ifdef CONFIG_SUSPEND

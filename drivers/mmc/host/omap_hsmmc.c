@@ -33,7 +33,6 @@
 #include <linux/gpio.h>
 #include <linux/regulator/consumer.h>
 #include <linux/pm_runtime.h>
-#include <asm/mach-types.h>
 #ifdef CONFIG_PM
 #include <plat/omap-pm.h>
 #endif
@@ -223,6 +222,7 @@ struct omap_hsmmc_host {
 	spinlock_t		dpll_lock;
 
 	struct	omap_mmc_platform_data	*pdata;
+	int		shutdown;
 };
 
 static int omap_hsmmc_card_detect(struct device *dev, int slot)
@@ -286,15 +286,10 @@ static int omap_hsmmc_1_set_power(struct device *dev, int slot, int power_on,
 	if (mmc_slot(host).before_set_reg)
 		mmc_slot(host).before_set_reg(dev, slot, power_on, vdd);
 
-	if (power_on) {
-
-		if (mmc_slot(host).card_detect && !mmc_slot(host).card_detect(host->dev, host->slot_id))
-			ret = 0;
-		else
-			ret = mmc_regulator_set_ocr(host->mmc, host->vcc, vdd);
-	}
+	if (power_on)
+		ret = mmc_regulator_set_ocr(host->vcc, vdd);
 	else
-		ret = mmc_regulator_set_ocr(host->mmc, host->vcc, 0);
+		ret = mmc_regulator_set_ocr(host->vcc, 0);
 
 	if (mmc_slot(host).after_set_reg)
 		mmc_slot(host).after_set_reg(dev, slot, power_on, vdd);
@@ -333,23 +328,18 @@ static int omap_hsmmc_23_set_power(struct device *dev, int slot, int power_on,
 	 * chips/cards need an interface voltage rail too.
 	 */
 	if (power_on) {
-		ret = mmc_regulator_set_ocr(host->mmc, host->vcc, vdd);
+		ret = mmc_regulator_set_ocr(host->vcc, vdd);
 		/* Enable interface voltage rail, if needed */
 		if (ret == 0 && host->vcc_aux) {
 			ret = regulator_enable(host->vcc_aux);
 			if (ret < 0)
-				ret = mmc_regulator_set_ocr(host->mmc,
-							host->vcc, 0);
+				ret = mmc_regulator_set_ocr(host->vcc, 0);
 		}
 	} else {
-		/* Shut down the rail */
 		if (host->vcc_aux)
 			ret = regulator_disable(host->vcc_aux);
-		if (!ret) {
-			/* Then proceed to shut down the local regulator */
-			ret = mmc_regulator_set_ocr(host->mmc,
-						host->vcc, 0);
-		}
+		if (ret == 0)
+			ret = mmc_regulator_set_ocr(host->vcc, 0);
 	}
 
 	if (mmc_slot(host).after_set_reg)
@@ -370,10 +360,7 @@ static int omap_hsmmc_1_set_sleep(struct device *dev, int slot, int sleep,
 		platform_get_drvdata(to_platform_device(dev));
 	int mode = sleep ? REGULATOR_MODE_STANDBY : REGULATOR_MODE_NORMAL;
 
-	if (host->power_mode != MMC_POWER_OFF)
-		return regulator_set_mode(host->vcc, mode);
-	else
-		return 0;
+	return regulator_set_mode(host->vcc, mode);
 }
 
 static int omap_hsmmc_23_set_sleep(struct device *dev, int slot, int sleep,
@@ -398,9 +385,9 @@ static int omap_hsmmc_23_set_sleep(struct device *dev, int slot, int sleep,
 	if (cardsleep) {
 		/* VCC can be turned off if card is asleep */
 		if (sleep)
-			err = mmc_regulator_set_ocr(host->mmc, host->vcc, 0);
+			err = mmc_regulator_set_ocr(host->vcc, 0);
 		else
-			err = mmc_regulator_set_ocr(host->mmc, host->vcc, vdd);
+			err = mmc_regulator_set_ocr(host->vcc, vdd);
 	} else
 		err = regulator_set_mode(host->vcc, mode);
 	if (err)
@@ -1310,14 +1297,8 @@ static void omap_hsmmc_detect(struct work_struct *work)
 
 	if (carddetect)
 		mmc_detect_change(host->mmc, (HZ * 200) / 1000);
-	else {
-		if ((MMC_POWER_OFF != host->power_mode) &&
-			(mmc_slot(host).set_power != NULL)) {
-			mmc_slot(host).set_power(host->dev, host->slot_id, 0, 0);
-			host->power_mode = MMC_POWER_OFF;
-		}
-		mmc_detect_change(host->mmc, 0);
-	}
+	else
+		mmc_detect_change(host->mmc, (HZ * 50) / 1000);
 }
 
 /*
@@ -1616,6 +1597,10 @@ static void omap_hsmmc_request(struct mmc_host *mmc, struct mmc_request *req)
 
 	BUG_ON(host->req_in_progress);
 	BUG_ON(host->dma_ch != -1);
+
+	if (host->shutdown)
+		return;
+
 	if (host->protect_card) {
 		if (host->reqs_blocked < 3) {
 			/*
@@ -1644,52 +1629,50 @@ static void omap_hsmmc_request(struct mmc_host *mmc, struct mmc_request *req)
 	* the actual issue is root caused.
 	*/
 #ifdef CONFIG_TIWLAN_SDIO
-	if (machine_is_omap_4430sdp()) {
-		if (host->id == CONFIG_TIWLAN_MMC_CONTROLLER-1) {
-			unsigned int irq_mask = 0, status = 0, loops = 0, i = 0;
+	if (host->id == CONFIG_TIWLAN_MMC_CONTROLLER-1) {
+		unsigned int irq_mask = 0, status = 0, loops = 0, i = 0;
 
-			if (req->data != NULL && req->data->blocks == 1 && req->data->blksz < DMA_THRESHOLD) {
-				int dma_type;
-				unsigned char *nondma_data = sg_virt(req->data->sg);
+		if (req->data != NULL && req->data->blocks == 1 && req->data->blksz < DMA_THRESHOLD) {
+			int dma_type;
+			unsigned char *nondma_data = sg_virt(req->data->sg);
 
-				OMAP_HSMMC_WRITE(host, BLK, (req->data->blksz));
+			OMAP_HSMMC_WRITE(host, BLK, (req->data->blksz));
 
-				OMAP_HSMMC_WRITE(host, STAT, STAT_CLEAR);
-				irq_mask = INT_EN_MASK;
-				OMAP_HSMMC_WRITE(host, ISE, 0);
-				OMAP_HSMMC_WRITE(host, IE, irq_mask);
+			OMAP_HSMMC_WRITE(host, STAT, STAT_CLEAR);
+			irq_mask = INT_EN_MASK;
+			OMAP_HSMMC_WRITE(host, ISE, 0);
+			OMAP_HSMMC_WRITE(host, IE, irq_mask);
 
-				spin_lock(&host->irq_lock);
-				dma_type = host->dma_type;
-				host->dma_type = DMA_TYPE_NODMA;
-				host->polling_enabled = 1;
-				spin_unlock(&host->irq_lock);
-				omap_hsmmc_start_command(host, req->cmd, req->data);
+			spin_lock(&host->irq_lock);
+			dma_type = host->dma_type;
+			host->dma_type = DMA_TYPE_NODMA;
+			host->polling_enabled = 1;
+			spin_unlock(&host->irq_lock);
+			omap_hsmmc_start_command(host, req->cmd, req->data);
 
-				spin_lock(&host->irq_lock);
-				host->dma_type = dma_type;
-				host->polling_enabled = 0;
-				spin_unlock(&host->irq_lock);
+			spin_lock(&host->irq_lock);
+			host->dma_type = dma_type;
+			host->polling_enabled = 0;
+			spin_unlock(&host->irq_lock);
 
-				while (!(status & CC) && (loops++ <= POLLING_MAX_LOOPS))
+			while (!(status & CC) && (loops++ <= POLLING_MAX_LOOPS))
+				status = OMAP_HSMMC_READ(host, STAT);
+			status = 0; loops = 0;
+
+			if ((req->data->flags & MMC_DATA_READ)) {
+				while (!(status & BRR_ENABLE) && (loops++ <= POLLING_MAX_LOOPS))
 					status = OMAP_HSMMC_READ(host, STAT);
-				status = 0; loops = 0;
-
-				if ((req->data->flags & MMC_DATA_READ)) {
-					while (!(status & BRR_ENABLE) && (loops++ <= POLLING_MAX_LOOPS))
-						status = OMAP_HSMMC_READ(host, STAT);
-					for (; i < req->data->blksz; i += sizeof(unsigned long))
-						*((unsigned long *)(nondma_data + i)) = OMAP_HSMMC_READ(host, DATA);
-				} else if ((req->data->flags & MMC_DATA_WRITE)) {
-					for (; i < req->data->blksz; i += sizeof(unsigned long))
-						OMAP_HSMMC_WRITE(host, DATA, *((unsigned long *)(nondma_data + i)));
-				}
-				status = 0; loops = 0;
-				while (!(status & TC) && (loops++ <= POLLING_MAX_LOOPS))
-					status = OMAP_HSMMC_READ(host, STAT);
-				omap_hsmmc_request_done(host, req);
-				return;
+				for (; i < req->data->blksz; i += sizeof(unsigned long))
+					*((unsigned long *)(nondma_data + i)) = OMAP_HSMMC_READ(host, DATA);
+			} else if ((req->data->flags & MMC_DATA_WRITE)) {
+			for (; i < req->data->blksz; i += sizeof(unsigned long))
+				OMAP_HSMMC_WRITE(host, DATA, *((unsigned long *)(nondma_data + i)));
 			}
+			status = 0; loops = 0;
+			while (!(status & TC) && (loops++ <= POLLING_MAX_LOOPS))
+				status = OMAP_HSMMC_READ(host, STAT);
+			omap_hsmmc_request_done(host, req);
+			return;
 		}
 	}
 #endif
@@ -1959,7 +1942,7 @@ static int omap_hsmmc_disabled_to_sleep(struct omap_hsmmc_host *host)
 	if (mmc_card_can_sleep(host->mmc)) {
 		err = mmc_card_sleep(host->mmc);
 		if (err < 0) {
-			pm_runtime_put_sync(host->dev);
+			clk_disable(host->fclk);
 			mmc_release_host(host->mmc);
 			return err;
 		}
@@ -2409,6 +2392,7 @@ static int __init omap_hsmmc_probe(struct platform_device *pdev)
 	host->regs	= (u16 *) pdata->regs_map;
 	host->power_mode = MMC_POWER_OFF;
 	host->tput_constraint = 0;
+	host->shutdown = 0;
 
 	if (cpu_is_omap44xx() && host->id == 0) {
 		host->nb.notifier_call = hsmmc_dpll_notifier;
@@ -2420,15 +2404,13 @@ static int __init omap_hsmmc_probe(struct platform_device *pdev)
 		host->master_clock = OMAP_MMC_MASTER_CLOCK / 2;
 
 #ifdef CONFIG_TIWLAN_SDIO
-	if (machine_is_omap_4430sdp()) {
-		if (pdev->id == CONFIG_TIWLAN_MMC_CONTROLLER-1) {
-			if (pdata->slots[0].embedded_sdio != NULL) {
-				mmc_set_embedded_sdio_data(mmc,
-				&pdata->slots[0].embedded_sdio->cis,
-				&pdata->slots[0].embedded_sdio->cccr,
-				pdata->slots[0].embedded_sdio->funcs,
-				pdata->slots[0].embedded_sdio->quirks);
-			}
+	if (pdev->id == CONFIG_TIWLAN_MMC_CONTROLLER-1) {
+		if (pdata->slots[0].embedded_sdio != NULL) {
+			mmc_set_embedded_sdio_data(mmc,
+			&pdata->slots[0].embedded_sdio->cis,
+			&pdata->slots[0].embedded_sdio->cccr,
+			pdata->slots[0].embedded_sdio->funcs,
+			pdata->slots[0].embedded_sdio->quirks);
 		}
 	}
 #endif
@@ -2534,8 +2516,6 @@ static int __init omap_hsmmc_probe(struct platform_device *pdev)
 
 	if (mmc_slot(host).nonremovable)
 		mmc->caps |= MMC_CAP_NONREMOVABLE;
-
-	mmc->pm_caps |= MMC_PM_KEEP_POWER;
 
 	omap_hsmmc_conf_bus_power(host);
 
@@ -2732,9 +2712,9 @@ static int omap_hsmmc_suspend(struct device *dev)
 			}
 		}
 		cancel_work_sync(&host->mmc_carddetect_work);
-		mmc_host_enable(host->mmc);
 		ret = mmc_suspend_host(host->mmc);
 		if (ret == 0) {
+			mmc_host_enable(host->mmc);
 			omap_hsmmc_disable_irq(host);
 			OMAP_HSMMC_WRITE(host, HCTL,
 				OMAP_HSMMC_READ(host, HCTL) & ~SDBP);
@@ -2752,12 +2732,6 @@ static int omap_hsmmc_suspend(struct device *dev)
 						"Unmask interrupt failed\n");
 			}
 
-			/*
-			 * Directly call platform_bus suspend. runtime PM
-			 * PM lock is held during system suspend, so will
-			 * not be auto-matically called
-			 */
-			mmc_host_disable(host->mmc);
 		}
 
 	}
@@ -2839,6 +2813,26 @@ static int omap_hsmmc_runtime_resume(struct device *dev)
 	return 0;
 }
 
+static void omap_hsmmc_shutdown(struct platform_device *pdev)
+{
+	struct omap_hsmmc_host *host = platform_get_drvdata(pdev);
+
+#ifdef CONFIG_TIWLAN_SDIO
+	/* No particular shutdown delay for WLAN - only apply this to real cards */
+	if (pdev->id == CONFIG_TIWLAN_MMC_CONTROLLER-1) {
+		return;
+	}
+#endif
+	dev_info(&pdev->dev, "shutting down mmc\n");
+	mmc_flush_scheduled_work();
+	host->shutdown = 1;
+	cancel_delayed_work(&host->mmc->detect);
+	mmc_flush_scheduled_work();
+
+	/* MMC spec gives 800ms min for card housekeeping.
+	   Leave it on the safe side */
+	msleep(1000);
+}
 
 static struct dev_pm_ops omap_hsmmc_dev_pm_ops = {
 	.suspend	= omap_hsmmc_suspend,
@@ -2849,6 +2843,7 @@ static struct dev_pm_ops omap_hsmmc_dev_pm_ops = {
 
 static struct platform_driver omap_hsmmc_driver = {
 	.remove		= omap_hsmmc_remove,
+	.shutdown   = omap_hsmmc_shutdown,
 	.driver		= {
 		.name = DRIVER_NAME,
 		.owner = THIS_MODULE,

@@ -52,12 +52,6 @@ struct usbhs_omap_platform_data {
 	 * Each PHY can have a separate regulator.
 	 */
 	struct regulator        *regulator[OMAP3_HS_USB_PORTS];
-	/* Device can have USB power supply
-	 * switch driven via GPIO
-	 */
-	int	power_gpio_num;
-	unsigned	power_gpio_inv:1;
-	unsigned	power_pad_conf;
 };
 
 
@@ -124,7 +118,6 @@ extern int omap4430_phy_power(struct device *dev, int ID, int on);
 extern int omap4430_phy_set_clk(struct device *dev, int on);
 extern int omap4430_phy_init(struct device *dev);
 extern int omap4430_phy_exit(struct device *dev);
-extern int omap4_charger_detect(void);
 extern void usbhs_wakeup(void);
 
 /* For saving and restoring the musb context during off/wakeup*/

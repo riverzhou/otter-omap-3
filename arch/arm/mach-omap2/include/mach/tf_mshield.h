@@ -6,6 +6,6 @@
  * published by the Free Software Foundation.
  */
 
-#ifdef CONFIG_SECURITY_MIDDLEWARE_COMPONENT
+#ifdef CONFIG_TF_MSHIELD
 void tf_allocate_workspace(void);
 #endif

@@ -312,7 +312,6 @@ void *proc4430_create(u16 proc_id, const struct proc4430_params *params)
 				 params->num_mem_entries));
 		}
 		handle->boot_mode = PROC_MGR_BOOTMODE_NOLOAD;
-		atomic_set(&object->attach_count, 0);
 		/* Set the handle in the state object. */
 		proc4430_state.proc_handles[proc_id] = handle;
 	}
@@ -556,7 +555,6 @@ int proc4430_detach(void *handle)
 			unmap_info.addr =
 				object->params.mem_entries[i].master_virt_addr;
 			unmap_info.size = object->params.mem_entries[i].size;
-			unmap_info.is_cached = false;
 			platform_mem_unmap(&unmap_info);
 			object->params.mem_entries[i].master_virt_addr =
 				(u32)-1;
