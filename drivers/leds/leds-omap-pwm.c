@@ -397,4 +397,3 @@ module_exit(omap_pwm_led_exit);
 MODULE_AUTHOR("Timo Teras");
 MODULE_DESCRIPTION("OMAP PWM LED driver");
 MODULE_LICENSE("GPL");
-

@@ -225,6 +225,7 @@ static int omap4430_sdp_display_probe(struct platform_device *pdev)
 	info->pri_display_class_dev.name = "led-orange";
 	info->pri_display_class_dev.brightness_set = omap4430_orange_led_set;
 	info->pri_display_class_dev.max_brightness = LED_FULL;
+	info->pri_display_class_dev.max_thermal_brightness = LED_FULL;
 	info->pri_display_class_dev.brightness = LED_OFF;
 	info->pri_display_class_dev.blink_set = omap4430_orange_led_set_blink;
 	mutex_init(&info->pri_disp_lock);
@@ -294,34 +295,36 @@ static int omap4430_sdp_display_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int omap4430_sdp_display_suspend(struct platform_device *pdev, pm_message_t state)
+static int omap4430_sdp_display_suspend(struct platform_device *pdev,
+		pm_message_t state)
 {
-    printk("!!!!!!!%s!!!!!!!!!!\n",__func__);
-    struct display_led_data *info = platform_get_drvdata(pdev);
-    omap4430_orange_led_set(&info->pri_display_class_dev,LED_OFF);
-	
-	
+	struct display_led_data *info;
+
+	info = platform_get_drvdata(pdev);
+	omap4430_orange_led_set(&info->pri_display_class_dev, LED_OFF);
+
 	return 0;
 }
 
 static int omap4430_sdp_display_resume(struct platform_device *pdev)
 {
-    struct display_led_data *info = platform_get_drvdata(pdev);
-    omap4430_orange_led_set(&info->pri_display_class_dev,LED_OFF);
-	printk("!!!!!!!%s!!!!!!!!!!\n",__func__);
-	
+	struct display_led_data *info;
+
+	info = platform_get_drvdata(pdev);
+	omap4430_orange_led_set(&info->pri_display_class_dev, LED_OFF);
+
 	return 0;
 }
 
 static struct platform_driver omap4430_sdp_display_driver = {
-	.probe = omap4430_sdp_display_probe,
-	.remove = omap4430_sdp_display_remove,
-    	.suspend	= omap4430_sdp_display_suspend,
-	.resume		= omap4430_sdp_display_resume,
-	.driver = {
-		   .name = "display_led",
-		   .owner = THIS_MODULE,
-		   },
+	.probe   = omap4430_sdp_display_probe,
+	.remove  = omap4430_sdp_display_remove,
+	.suspend = omap4430_sdp_display_suspend,
+	.resume	 = omap4430_sdp_display_resume,
+	.driver  = {
+		.name = "display_led",
+		.owner = THIS_MODULE,
+	},
 };
 
 static int __init omap4430_sdp_display_init(void)
