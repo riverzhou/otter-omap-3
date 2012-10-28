@@ -29,15 +29,4 @@
 
 #define STK_LOCK(x) STK_LOCK##x
 
-#include <linux/version.h>
-
-#if (LINUX_VERSION_CODE>=KERNEL_VERSION(2,6,35))
-#define stk_bin_sysfs_read(name) name##_read(struct file *fptr,struct kobject *kobj, struct bin_attribute *bin_attr,	char * buffer, loff_t offset, size_t count)
-#define stk_bin_sysfs_write(name) name##_write(struct file *fptr,struct kobject *kobj, struct bin_attribute *bin_attr,char * buffer, loff_t offset, size_t count)
-#else
-#define stk_bin_sysfs_read(name) name##_read(struct kobject *kobj, struct bin_attribute *bin_attr,	char * buffer, loff_t offset, size_t count)
-#define stk_bin_sysfs_write(name) name##_write(struct kobject *kobj, struct bin_attribute *bin_attr,char * buffer, loff_t offset, size_t count)
-#endif
-
-
 #endif // __STK__LK_DEFS_H
