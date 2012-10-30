@@ -48,6 +48,11 @@
 
 #include <linux/thermal_framework.h>
 
+#ifdef CONFIG_LAB126
+#include <linux/metricslog.h>
+#define TMP103_METRICS_STR_LEN 128
+#endif
+
 #define	TMP103_TEMP_REG			0x00
 #define	TMP103_CONF_REG			0x01
 
@@ -64,6 +69,7 @@
 #define		TMP103_THIGH_REG	0x03
 
 #define 	TMP103_SHUTDOWN 	0x01
+#define		TMP103_MAX_TEMP		127000
 
 /* Addresses scanned */
 static const unsigned short normal_i2c[] = { 0x70, 0x71, 0x72, 
@@ -82,6 +88,7 @@ struct tmp103_temp_sensor {
 	struct mutex sensor_mutex;
 	struct thermal_dev *therm_fw;
 	u16 config_orig;
+	u16 config_current;
 	unsigned long last_update;
 	int temp[3];
 	int debug_temp;
@@ -140,14 +147,69 @@ static int tmp103_read_current_temp(struct device *dev)
 	return tmp103->temp[index];
 }
 
+#define MAX_RETRY 5 /* retry count when PCB temp reading is 127 which could be a faulty read */
+
+/*
+ * if tmp103_get_temp returns saved value stgraight 50 times,
+ * then return faulty one so system can thermal shutdown.
+ */
+#define MAX_FAULTY_RETURN_COUNT 50
 static int tmp103_get_temp(struct thermal_dev *tdev)
 {
 	struct platform_device *pdev = to_platform_device(tdev->dev);
 	struct tmp103_temp_sensor *tmp103 = platform_get_drvdata(pdev);
+	int current_temp;
+	static int saved_temp;
+	int count = 1;
+	struct i2c_client *client =  tmp103->iclient;
 
-	tmp103->therm_fw->current_temp =
-			tmp103_read_current_temp(tdev->dev);
+#ifdef CONFIG_LAB126
+	char *tmp103_metric_prefix = "pcbsensor:def";
+	char buf[TMP103_METRICS_STR_LEN];
+#endif
+	static int fail_count = 0;
 
+	current_temp = tmp103_read_current_temp(tdev->dev);
+
+	if (unlikely(current_temp >= TMP103_MAX_TEMP)){
+		/* Log in metrics */
+		snprintf(buf,TMP103_METRICS_STR_LEN,"%s:abnormal_temp=%d:",tmp103_metric_prefix, current_temp);
+		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
+		pr_info("TMP103 reads abnormal temperature %d", current_temp);
+
+		/* switch to shutdown mode, then swtich back to previous mode ( contious conversion mode) */ 
+		tmp103_write_reg(client, TMP103_CONF_REG, 0); /* shutdown mode: TMP103_CONF_M1=0, TMP103_CONF_M0=0 */
+		tmp103_write_reg(client, TMP103_CONF_REG, tmp103->config_current); /* start conversion */
+
+		/* retry */
+		do {
+			current_temp = tmp103_read_current_temp(tdev->dev);
+			/* Log in metrics */
+			snprintf(buf,TMP103_METRICS_STR_LEN,"%s:pcbtemp=%d,retry=%d:", tmp103_metric_prefix, current_temp,count);
+			log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
+			pr_info("TMP103 reads temperature %d, retrying... %d ",current_temp, count);
+		} while ( (count++ <  MAX_RETRY) && (!current_temp || (current_temp >= TMP103_MAX_TEMP)  ) );
+	}
+
+	if (unlikely(current_temp >= TMP103_MAX_TEMP)){
+		if (++fail_count > MAX_FAULTY_RETURN_COUNT ) {
+			pr_info("FATAL: TMP103 locked down, return faulty temperature %d," \
+				" system will shutdown....", current_temp);
+			tmp103->therm_fw->current_temp = current_temp;
+			return tmp103->therm_fw->current_temp;
+		}
+		current_temp = saved_temp;
+		/* Log in metrics */
+		snprintf(buf,TMP103_METRICS_STR_LEN,"%s:saved_temp=%d,use_saved_temp=1:",tmp103_metric_prefix, saved_temp);
+		log_to_metrics(ANDROID_LOG_INFO, "ThermalEvent", buf);
+		pr_info("WARNING: TMP103 retry failed, return last saved temperature %d", saved_temp);
+	} else { /* less than TMP103_MAX_TEMP read */
+		fail_count = 0;
+		saved_temp = current_temp;
+	}
+	tmp103->therm_fw->current_temp = current_temp;
+
+	saved_temp = current_temp;
 	return tmp103->therm_fw->current_temp;
 }
 
@@ -262,6 +324,7 @@ static int __devinit tmp103_temp_sensor_probe(
 		}
 	}
 
+	tmp103->config_current = new;
 	tmp103->last_update = jiffies - HZ;
 	mutex_init(&tmp103->sensor_mutex);
 

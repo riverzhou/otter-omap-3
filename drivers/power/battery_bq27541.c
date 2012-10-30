@@ -14,7 +14,9 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/i2c.h>
+#include <linux/reboot.h>
 #include <linux/timer.h>
+#include <linux/syscalls.h>
 #include <linux/sysdev.h>
 #include <linux/power_supply.h>
 #include <linux/slab.h>
@@ -72,6 +74,7 @@
 #define BQ27541_TEMP_MID_THRESHOLD	100	/* Mid temperature threshold in 0.1 C */
 #define BQ27541_VOLT_LOW_THRESHOLD	2500	/* Low voltage threshold in mV */
 #define BQ27541_VOLT_HI_THRESHOLD	4350	/* High voltage threshold in mV */
+#define BQ27541_VOLT_CRIT_THRESHOLD	3200	/* Critically low votlage threshold in mV */
 #define BQ27541_BATTERY_INTERVAL	5000	/* 5 second duration */
 #define BQ27541_BATTERY_INTERVAL_EARLY	1000	/* 1 second on probe */
 #define BQ27541_BATTERY_INTERVAL_START	5000	/* 5 second timer on startup */
@@ -380,6 +383,9 @@ static void battery_handle_work(struct work_struct *work)
 	int value = 0, flags = 0;
 	struct bq27541_info *info = container_of(work,
 				struct bq27541_info, battery_work.work);
+#ifdef CONFIG_LAB126
+	char buf[128];
+#endif
 
 	err = bq27541_battery_read_temperature(&value);
 	if (err) {
@@ -430,6 +436,23 @@ static void battery_handle_work(struct work_struct *work)
 		}
 
 		info->i2c_err = 0;
+	}
+
+	/* Check for critical battery voltage */
+	if (info->battery_voltage <= BQ27541_VOLT_CRIT_THRESHOLD) {
+		printk(KERN_WARNING
+			"bq27541: battery has reached critically low level, "
+			"shutting down...\n");
+
+#ifdef CONFIG_LAB126
+
+		snprintf(buf, sizeof(buf),
+			"bq27541:def:critical_shutdown=1:");
+
+		log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
+#endif
+		sys_sync();
+		orderly_poweroff(true);
 	}
 
 	/*
@@ -501,7 +524,7 @@ static void battery_handle_work(struct work_struct *work)
 		} else if (flags & BQ27541_FLAGS_CHG) {
 			value = POWER_SUPPLY_STATUS_CHARGING;
 		} else {
-			value = POWER_SUPPLY_STATUS_NOT_CHARGING;
+			value = info->battery_status;
 		}
 
 		if (info->battery_status != value) {

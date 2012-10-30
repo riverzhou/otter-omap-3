@@ -232,13 +232,13 @@ static int hdmi_panel_enable(struct omap_dss_device *dssdev)
 		hdmi_panel_hpd_handler(hdmi_get_current_hpd());
 	}
 
-	dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
 	r = omapdss_hdmi_display_enable(dssdev);
 	if (r) {
 		DSSERR("failed to power on\n");
-		dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
 		goto err;
 	}
+
+	dssdev->state = OMAP_DSS_DISPLAY_ACTIVE;
 
 err:
 	mutex_unlock(&hdmi.hdmi_lock);
@@ -263,42 +263,14 @@ static void hdmi_panel_disable(struct omap_dss_device *dssdev)
 
 static int hdmi_panel_suspend(struct omap_dss_device *dssdev)
 {
-	int r = 0;
+	hdmi_panel_enable(dssdev);
 
-	mutex_lock(&hdmi.hdmi_lock);
-
-	if (dssdev->state != OMAP_DSS_DISPLAY_ACTIVE) {
-		r = -EINVAL;
-		goto err;
-	}
-
-	dssdev->state = OMAP_DSS_DISPLAY_SUSPENDED;
-
-	omapdss_hdmi_display_disable(dssdev);
-err:
-	mutex_unlock(&hdmi.hdmi_lock);
-
-	return r;
+	return 0;
 }
 
 static int hdmi_panel_resume(struct omap_dss_device *dssdev)
 {
-	int r = 0;
-
-	mutex_lock(&hdmi.hdmi_lock);
-
-	if (dssdev->state != OMAP_DSS_DISPLAY_SUSPENDED) {
-		r = -EINVAL;
-		goto err;
-	}
-
-	dssdev->state = OMAP_DSS_DISPLAY_DISABLED;
-err:
-	mutex_unlock(&hdmi.hdmi_lock);
-
-	hdmi_panel_hpd_handler(hdmi_get_current_hpd());
-
-	return r;
+	return hdmi_panel_enable(dssdev);
 }
 
 enum {
@@ -325,7 +297,6 @@ static void hdmi_hotplug_detect_worker(struct work_struct *work)
 	}
 	dssdev = omap_dss_find_device(NULL, match);
 
-	pr_err("in hpd work %d, state=%d\n", state, dssdev->state);
 	if (dssdev == NULL)
 		return;
 
@@ -364,12 +335,24 @@ static void hdmi_hotplug_detect_worker(struct work_struct *work)
 			hdmi_audio_update_edid_info();
 			switch_set_state(&hdmi.hpd_switch, 1);
 			goto done;
-		} else if (state == HPD_STATE_EDID_TRYLAST){
-			pr_info("Failed to read EDID after %d times. Giving up.", state - HPD_STATE_START);
-			goto done;
+		} else if (state == HPD_STATE_EDID_TRYLAST) {
+			if (hdmi_get_current_hpd()) {
+				atomic_set(&d->state, HPD_STATE_START);
+				pr_info("Please check your HDMI cable!\n");
+			} else {
+				pr_info("Failed to read EDID after %d times.\n",
+					state - HPD_STATE_START);
+			}
 		}
+
+		/*
+		 * Typical duration of successful detect procedure is around
+		 * of half second. So the delay before next retry should be
+		 * bigger than detect itself.
+		 */
 		if (atomic_add_unless(&d->state, 1, HPD_STATE_OFF))
-			queue_delayed_work(my_workq, &d->dwork, msecs_to_jiffies(60));
+			queue_delayed_work(my_workq, &d->dwork,
+				msecs_to_jiffies(OMAP_HDMI_TIME_TO_RETRY));
 	}
 done:
 	mutex_unlock(&hdmi.hdmi_lock);
@@ -379,7 +362,8 @@ int hdmi_panel_hpd_handler(int hpd)
 {
 	__cancel_delayed_work(&hpd_work.dwork);
 	atomic_set(&hpd_work.state, hpd ? HPD_STATE_START : HPD_STATE_OFF);
-	queue_delayed_work(my_workq, &hpd_work.dwork, msecs_to_jiffies(hpd ? 40 : 30));
+	queue_delayed_work(my_workq, &hpd_work.dwork,
+			   msecs_to_jiffies(OMAP_HDMI_TIME_TO_RETRY));
 	return 0;
 }
 
@@ -402,8 +386,7 @@ static void hdmi_set_timings(struct omap_dss_device *dssdev,
 
 	dssdev->panel.timings = *timings;
 
-	if (dssdev->state == OMAP_DSS_DISPLAY_ACTIVE)
-		omapdss_hdmi_display_set_timing(dssdev);
+	omapdss_hdmi_display_set_timing(dssdev);
 
 	mutex_unlock(&hdmi.hdmi_lock);
 }

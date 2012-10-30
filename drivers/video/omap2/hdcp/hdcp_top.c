@@ -389,7 +389,7 @@ static void hdcp_work_queue(struct work_struct *work)
 		/* Ri failure */
 		if (event == HDCP_RI_FAIL_EVENT) {
 			printk(KERN_INFO "HDCP: Ri check failure\n");
-
+			hdcp.hdmi_state = HDMI_STARTED;
 			hdcp_wq_authentication_failure();
 		}
 		/* KSV list ready event */
@@ -408,6 +408,7 @@ static void hdcp_work_queue(struct work_struct *work)
 		/* Ri failure */
 		if (event == HDCP_RI_FAIL_EVENT) {
 			printk(KERN_INFO "HDCP: Ri check failure\n");
+			hdcp.hdmi_state = HDMI_STARTED;
 			hdcp_wq_authentication_failure();
 		}
 		break;
@@ -535,8 +536,13 @@ static void hdcp_start_frame_cb(void)
 	/* Cancel any pending work */
 	if (hdcp.pending_start)
 		hdcp_cancel_work(&hdcp.pending_start);
-	if (hdcp.pending_wq_event)
+	if (hdcp.pending_wq_event) {
 		hdcp_cancel_work(&hdcp.pending_wq_event);
+		/* On SYNC_LOST there is no synchronization between the cancel
+		 * process and the new hdcp_start_frame_cb, this would cause a
+		 * a problem with the HDCP states */
+		hdcp.hdcp_state = HDCP_ENABLE_PENDING;
+	}
 
 	hdcp.hpd_low = 0;
 	ddc.pending_disable = 0;

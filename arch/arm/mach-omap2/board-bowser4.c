@@ -184,7 +184,7 @@ static struct platform_device hall_device = {
 
 #endif
 
-/*SW5, Anvoi, 20111215, Config key VolumeUp/VolumeDown{*/				
+/*SW5, Anvoi, 20111215, Config key VolumeUp/VolumeDown{*/
 /* GPIO_KEY for Bowser */
 /* Config VolumeUp : GPIO_WK1 , VolumeDown : GPIO_50 */
 static struct gpio_keys_button bowser_gpio_keys_buttons[] = {
@@ -202,7 +202,7 @@ static struct gpio_keys_button bowser_gpio_keys_buttons[] = {
 		.desc			= "SW3",
 		.active_low		= 1,
 		.wakeup			= 1,
-		.debounce_interval	= 5,
+		.debounce_interval	= 0,
 		},
 	};
 
@@ -658,10 +658,10 @@ static struct twl4030_platform_data sdp4430_twldata = {
 	.ldoln		= &sdp4430_vdac,
 	.ldousb		= &sdp4430_vusb,
 
-	/* TWL6030/6032 common resources */	
+	/* TWL6030/6032 common resources */
 	.clk32kg	= &sdp4430_clk32kg,
 
-	/* children */	
+	/* children */
 	.usb		= &omap4_usbphy_data,
 	.madc		= &twl6030_madc,
 
@@ -765,7 +765,7 @@ static struct mpu_platform_data inv_mpu_data = {
 	.int_config  = 0x10,
 	.orientation = {  -1,  0,  0,
 			   0, -1,  0,
-			   0,  0,  1 },		   
+			   0,  0,  1 },
 };
 static struct ext_slave_platform_data mpu_compass_data = {
 	.bus         = EXT_SLAVE_BUS_SECONDARY,
@@ -802,7 +802,7 @@ static struct i2c_board_info __initdata sdp4430_i2c_3_boardinfo[] = {
 		I2C_BOARD_INFO("bq27541", 0x55),
 	},
 #endif
-#if defined(CONFIG_SENSORS_LM75)	
+#if defined(CONFIG_SENSORS_LM75)
 	{
 		I2C_BOARD_INFO("tmp103", 0x70),
 	},
@@ -863,7 +863,7 @@ static void omap4_als_init(void)
         printk("MAX44007: Pulling up IRQ line\n");
         omap_mux_init_gpio(GPIO_MAX44007_IRQ, \
                 OMAP_PIN_INPUT_PULLUP);
-#endif				
+#endif
 }
 // Anvoi, 2011/12/14, Porting Light sensor driver to ICS
 
@@ -914,7 +914,7 @@ static int __init omap4_i2c_init(void)
 	omap4_pmic_init("twl6030", &sdp4430_twldata);
 	/*SW5, Jamestsai, 1213, enable cypress{*/
 	//omap_register_i2c_bus(2, 400, NULL, 0);
-	omap_register_i2c_bus(2, 400, sdp4430_i2c_2_boardinfo, 
+	omap_register_i2c_bus(2, 400, sdp4430_i2c_2_boardinfo,
 				ARRAY_SIZE(sdp4430_i2c_2_boardinfo));
 	/*}SW5, Jamestsai, 1213, enable cypress*/
         /* JossCheng, 20111221, change clock of i2c bus3 to be 400K Hz { */
@@ -933,7 +933,7 @@ static int __init omap4_i2c_init(void)
 	/*
 	 * Drive MSECURE high for TWL6030/6032 write access.
 	 */
-	omap_mux_init_signal("fref_clk3_req.gpio_wk30", OMAP_PIN_OUTPUT); 
+	omap_mux_init_signal("fref_clk3_req.gpio_wk30", OMAP_PIN_OUTPUT);
 	gpio_request(30, "msecure");
 	gpio_direction_output(30, 1);
 
@@ -1390,9 +1390,9 @@ static void __init omap_4430sdp_init(void)
 
 	omap4_create_board_props();
 	blaze_pmic_mux_init();
-	
+
 	omap4_i2c_init();
-	/* JossCheng, 20111221, Porting gyro sensor and e-compass {*/	
+	/* JossCheng, 20111221, Porting gyro sensor and e-compass {*/
 #ifdef CONFIG_MPU_SENSORS_MPU6050B1
 	mpu6050b1_init();
 #endif
@@ -1403,7 +1403,7 @@ static void __init omap_4430sdp_init(void)
 // Anvoi, 2011/12/14, Porting Light sensor driver to ICS
 	//blaze_touch_init();
 	omap4_register_ion();
-/*SW5, Anvoi, 20111215, Config key VolumeUp/VolumeDown{*/	
+/*SW5, Anvoi, 20111215, Config key VolumeUp/VolumeDown{*/
 	platform_add_devices(bowser_devices, ARRAY_SIZE(bowser_devices));
 /*SW5, Anvoi, 20111215, Config key VolumeUp/VolumeDown}*/
 #if defined (CONFIG_TATE_HALL_SENSORS)
@@ -1475,3 +1475,4 @@ MACHINE_START(OMAP4_BOWSER, "OMAP4 Bowser4 board")
 	.init_machine	= omap_4430sdp_init,
 	.timer		= &omap_timer,
 MACHINE_END
+

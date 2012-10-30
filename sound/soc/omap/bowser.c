@@ -24,7 +24,6 @@
 #include <linux/i2c.h>
 #include <linux/i2c/twl.h>
 #include <linux/regulator/consumer.h>
-#include <linux/workqueue.h>
 #include <linux/delay.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -184,16 +183,12 @@ static int bowser_set_bias_level_post(struct snd_soc_card *card,
 
 static int bowser_suspend_pre(struct snd_soc_card *card)
 {
-	struct wm8962_priv *wm8962 = snd_soc_codec_get_drvdata(codec_dai->codec);
 	dev_crit(codec_dai->dev,"%s\n",__func__);
 	if (codec_dai->dev == NULL){
 		dev_err(codec_dai->dev,"no run time codec_dai initialized yet\n");
 		return -EINVAL;
 	}
 
-	if (cancel_delayed_work_sync(&wm8962->mic_work))
-		dev_crit(codec_dai->dev,"mic_work scheduled to run and cancelled here\n");
-	
 	snd_soc_dapm_disable_pin(&codec_dai->codec->dapm, "SYSCLK");
 	snd_soc_dapm_sync(&codec_dai->codec->dapm);
 	msleep(10);
@@ -617,7 +612,7 @@ static int __init bowser_soc_init(void)
 	/*	av_switch_reg = regulator_get(&bowser_snd_device->dev, "av-switch");
 	  if (IS_ERR(av_switch_reg)) {
 	  ret = PTR_ERR(av_switch_reg);
-	  printk(KERN_ERR "couldn't get AV Switch regulator %d\n",
+	  printk(KERN_ERR "couldn't get AV Switch regulator %d\n",dev_pm_ops
 	  ret);
 	  goto reg_err;
 	  }*/

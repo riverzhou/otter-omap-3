@@ -40,13 +40,6 @@
 #define HS_DET_GPIO 171
 #define HS_PULSE_GPIO (wm8962->gpio_chip.base + 2)
 
-
-
-
-/*in order to cancel delayed work from machine driver,
-wm8962_priv struct has to be exposed to bowser.c. so move this 
-struct to wm8962.h */
-#if 0
 #define WM8962_NUM_SUPPLIES 8
 static const char *wm8962_supply_names[WM8962_NUM_SUPPLIES] = {
 	"DCVDD",
@@ -93,7 +86,6 @@ struct wm8962_priv {
 	bool insertion;
 	bool iphone;
 };
-#endif
 
 static bool boot_time;
 
@@ -3380,19 +3372,12 @@ static struct snd_soc_dai_driver wm8962_dai = {
 	.symmetric_rates = 1,
 };
 
-
-
-static void wm8962_mic_work(struct work_struct *work)
+static void accessories_detection(struct snd_soc_codec *codec)
 {
-	struct wm8962_priv *wm8962 = container_of(work,
-						  struct wm8962_priv,
-						  mic_work.work);
-	struct snd_soc_codec *codec = wm8962->codec;
-
 	int status = 0;
 	int reg,temp, val;
-
-
+	struct wm8962_priv *wm8962 = snd_soc_codec_get_drvdata(codec);
+	
 	val = gpio_get_value(wm8962->insert_gpio);
 	if (val) {
 		dev_err(codec->dev, "Detected insertion\n");
@@ -3526,6 +3511,16 @@ static void wm8962_mic_work(struct work_struct *work)
 	}
 }
 
+static void wm8962_mic_work(struct work_struct *work)
+{
+	struct wm8962_priv *wm8962 = container_of(work,
+						  struct wm8962_priv,
+						  mic_work.work);
+	struct snd_soc_codec *codec = wm8962->codec;
+        
+	accessories_detection(codec);
+}
+
 static void wm8962_hook_switch_report(struct work_struct *work)
 {
 	struct wm8962_priv *wm8962 = container_of(work, struct wm8962_priv,
@@ -3570,7 +3565,6 @@ static void wm8962_minus_plus_report(struct work_struct *work)
 	/*update polarity bit in order to generate IRQ for next press/release */
 	snd_soc_update_bits(codec, WM8962_MICINT_SOURCE_POL,WM8962_MICD_IRQ_POL, micd_irq_pol);
 }
-
 
 static irqreturn_t wm8962_irq(int irq, void *data)
 {
@@ -3651,14 +3645,9 @@ int wm8962_mic_detect(struct snd_soc_codec *codec, struct snd_soc_jack *jack)
 				    WM8962_MICDET_ENA, WM8962_MICDET_ENA);
 		msleep(50);
 	}
-	/*micbias has to enabled unconditionally to read realtime micd_sts */
-	/*	mutex_lock(&codec->mutex);
-	snd_soc_dapm_force_enable_pin(&codec->dapm, "SYSCLK");
-	snd_soc_dapm_force_enable_pin(&codec->dapm, "MICBIAS");
-	snd_soc_dapm_sync(&codec->dapm);
-	mutex_unlock(&codec->mutex);*/
 
-	schedule_delayed_work(&wm8962->mic_work, msecs_to_jiffies(1000));
+	accessories_detection(codec);
+   //	schedule_delayed_work(&wm8962->mic_work, msecs_to_jiffies(1000));
 	return 0;
 }
 EXPORT_SYMBOL_GPL(wm8962_mic_detect);

@@ -313,7 +313,7 @@ void hdmi_set_edid_state(bool val)
 	if (val)
 		pr_info("hdmi: EDID info read\n");
 	else
-		pr_info("hdmi: clearing EDID info\n");
+		pr_debug_once("hdmi: clearing EDID info\n");
 
 }
 EXPORT_SYMBOL(hdmi_set_edid_state);
@@ -330,6 +330,13 @@ u8 *hdmi_read_edid(struct omap_video_timings *dp)
 	ret = read_ti_4xxx_edid(&hdmi.hdmi_data, hdmi.edid,
 						HDMI_EDID_MAX_LENGTH);
 
+	if (ret || memcmp(hdmi.edid, edid_header, sizeof(edid_header))) {
+		DSSERR("failed to read E-EDID\n");
+		memset(hdmi.edid, 0, HDMI_EDID_MAX_LENGTH);
+		hdmi_set_edid_state(false);
+		return NULL;
+	}
+
 	for (i = 0; i < HDMI_EDID_MAX_LENGTH; i += 16)
 		pr_info("edid[%03x] = %02x %02x %02x %02x %02x %02x %02x %02x "
 			 "%02x %02x %02x %02x %02x %02x %02x %02x\n", i,
@@ -339,14 +346,6 @@ u8 *hdmi_read_edid(struct omap_video_timings *dp)
 			hdmi.edid[i + 9], hdmi.edid[i + 10], hdmi.edid[i + 11],
 			hdmi.edid[i + 12], hdmi.edid[i + 13], hdmi.edid[i + 14],
 			hdmi.edid[i + 15]);
-
-	if (ret) {
-		DSSWARN("failed to read E-EDID\n");
-		return NULL;
-	}
-
-	if (memcmp(hdmi.edid, edid_header, sizeof(edid_header)))
-		return NULL;
 
 	hdmi_set_edid_state(true);
 	/*  Callback HDCP only when EDID is read */
@@ -779,7 +778,7 @@ int hdmi_get_current_hpd()
 static irqreturn_t hpd_irq_handler(int irq, void *ptr)
 {
 	int hpd = hdmi_get_current_hpd();
-	pr_info("hpd %d\n", hpd);
+	pr_debug_once("hpd %d\n", hpd);
 
 	hdmi_panel_hpd_handler(hpd);
 
