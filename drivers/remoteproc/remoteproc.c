@@ -1219,7 +1219,7 @@ int rproc_set_secure(const char *name, bool enable)
 	_event_notify(rproc, RPROC_SECURE, (void *)enable);
 
 	/* block until the restart is complete */
-	if (wait_for_completion_interruptible(&rproc->secure_restart)) {
+	if (wait_for_completion_killable(&rproc->secure_restart)) {
 		pr_err("error waiting restart completion\n");
 		ret = -EINTR;
 		goto out;

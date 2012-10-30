@@ -44,6 +44,8 @@
 #include <asm/system.h>
 #include <asm/uaccess.h>
 
+#include <linux/metricslog.h>
+
 #include "queue.h"
 
 MODULE_ALIAS("mmc:block");
@@ -562,6 +564,8 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		pr_err("%s: %s sending %s command, card status %#x\n",
 			req->rq_disk->disk_name, "response CRC error",
 			name, status);
+
+		log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:response_CRC_err=1:");
 		return ERR_RETRY;
 
 	case -ETIMEDOUT:
@@ -571,6 +575,9 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		/* If the status cmd initially failed, retry the r/w cmd */
 		if (!status_valid) {
 			pr_err("%s: status not valid, retrying timeout\n", req->rq_disk->disk_name);
+
+			log_to_metrics(ANDROID_LOG_INFO, "emmc",
+				"cmd_blk:def:status_not_valid=1:");
 			return ERR_RETRY;
 		}
 		/*
@@ -580,18 +587,23 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		 */
 		if (status & (R1_COM_CRC_ERROR | R1_ILLEGAL_COMMAND)) {
 			pr_err("%s: command error, retrying timeout\n", req->rq_disk->disk_name);
+
+			log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:command_err=1:");
 			return ERR_RETRY;
 		}
 
 		/* Merge from TTX-4176: Retry the command */
 		pr_err("%s: retrying due to timeout\n",
 				req->rq_disk->disk_name);
+		log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:timeout_err=1:");
 		return ERR_RETRY;
 
 	default:
 		/* We don't understand the error code the driver gave us */
 		pr_err("%s: unknown error %d sending read/write command, card status %#x\n",
 		       req->rq_disk->disk_name, error, status);
+
+		log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:unknown_err=1:");
 		return ERR_ABORT;
 	}
 }
@@ -617,6 +629,11 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 	struct mmc_blk_request *brq)
 {
+	char err_msg[64];
+	snprintf(err_msg, sizeof(err_msg),
+		"cmd_blk:def:err_received=1,manfid=%x:", card->cid.manfid);
+	log_to_metrics(ANDROID_LOG_INFO, "emmc", err_msg);
+
 	bool prev_cmd_status_valid = true;
 	u32 status, stop_status = 0;
 	int err, retry;
@@ -637,8 +654,10 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 	}
 
 	/* We couldn't get a response from the card.  Give up. */
-	if (err)
+	if (err) {
+		log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:no_response_err=1:");
 		return ERR_ABORT;
+	}
 
 	/*
 	 * Check the current card state.  If it is in some data transfer
@@ -647,9 +666,11 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 	if (R1_CURRENT_STATE(status) == R1_STATE_DATA ||
 	    R1_CURRENT_STATE(status) == R1_STATE_RCV) {
 		err = send_stop(card, &stop_status);
-		if (err){
+		if (err) {
 			pr_err("%s: error %d sending stop command\n",
 			       req->rq_disk->disk_name, err);
+			log_to_metrics(ANDROID_LOG_INFO, "emmc",
+				"cmd_blk:def:send_stop_cmd_err=1:");
 			/* stop command could have failed because, card was
 			 * already in tran state */
 			err = get_card_status(card, &status, 0);
@@ -1597,4 +1618,5 @@ module_exit(mmc_blk_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Multimedia Card (MMC) block device driver");
+
 

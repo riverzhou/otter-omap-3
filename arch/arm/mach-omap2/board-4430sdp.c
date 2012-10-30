@@ -1600,7 +1600,7 @@ static struct omap_board_mux board_mux[] __initdata = {
     OMAP4_MUX(DPM_EMU7, OMAP_MUX_MODE5 | OMAP_PIN_INPUT_PULLDOWN), // DISPC2_HSYNC
 
     OMAP4_MUX(GPMC_NCS7, OMAP_MUX_MODE7 | OMAP_PULL_ENA),				//gpmc_ncs7=GPIO_104-OMAP_TP_RESET
-    OMAP4_MUX(GPMC_WAIT2, OMAP_MUX_MODE3 | OMAP_PIN_INPUT | OMAP_WAKEUP_EN |OMAP_PIN_OFF_INPUT_PULLUP),		//GPIO_100-ON_BUTTON
+    OMAP4_MUX(GPMC_WAIT2, OMAP_MUX_MODE3 | OMAP_PIN_INPUT | OMAP_WAKEUP_EN),		//GPIO_100-ON_BUTTON
     { .reg_offset = OMAP_MUX_TERMINATOR },
 };
 
@@ -1615,7 +1615,8 @@ static struct omap_board_mux board_wkup_mux[] __initdata = {
     OMAP4_MUX(SR_SDA, OMAP_MUX_MODE0 | OMAP_INPUT_EN),		//No need to use PAD PU
     OMAP4_MUX(FREF_CLK3_OUT, OMAP_MUX_MODE7 | OMAP_PULL_ENA),		//FREF_CLK3_OUT
     OMAP4_MUX(SYS_PWR_REQ, OMAP_MUX_MODE0 | OMAP_PULL_ENA),		// SYS_PWR_REQ
-    OMAP4_MUX(SYS_BOOT7, OMAP_MUX_MODE3 | OMAP_INPUT_EN),		// GPIO_WK10
+    OMAP4_MUX(SYS_BOOT6, OMAP_MUX_MODE0),		// 
+    OMAP4_MUX(SYS_BOOT7, OMAP_MUX_MODE0),		// GPIO_WK10
     { .reg_offset = OMAP_MUX_TERMINATOR },
 };
 
@@ -1710,7 +1711,6 @@ static struct omap_device_pad blaze_uart3_pads[] __initdata = {
 	},
 	{
 		.name	= "uart3_rx_irrx.uart3_rx_irrx",
-		.flags	= OMAP_DEVICE_PAD_REMUX | OMAP_DEVICE_PAD_WAKEUP,
 		.enable	= OMAP_PIN_INPUT_PULLUP | OMAP_MUX_MODE0,
 		.idle	= OMAP_PIN_INPUT_PULLUP | OMAP_MUX_MODE0,
 	},

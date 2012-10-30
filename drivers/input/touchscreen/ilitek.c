@@ -1004,8 +1004,12 @@ static void
 ilitek_i2c_shutdown(
         struct i2c_client *client)
 {
-        printk(ILITEK_DEBUG_LEVEL "%s\n", __func__);
-        i2c.stop_polling = 1;
+	printk(ILITEK_DEBUG_LEVEL "%s\n", __func__);
+	i2c.stop_polling = 1;
+	gpio_direction_output(ILITEK_TS_RESET, 0);
+	if (regulator_disable(p_regulator))
+		printk(ILITEK_DEBUG_LEVEL "%s regulator disable fail!\n",
+				__func__);
 }
 
 static int ilitek_i2c_read_info(struct i2c_client *client,

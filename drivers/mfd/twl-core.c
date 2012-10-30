@@ -1474,7 +1474,16 @@ twl_probe(struct i2c_client *client, const struct i2c_device_id *id)
 		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0xC0, PHOENIX_MSK_TRANSITION);
 		/*rtc off mode low power,BBSPOR_CFG,VRTC_EN_OFF_STS*/
 		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x72,0xe6);
-
+		/* Even though these LDOs have been turn off.
+		 * If the group of LDO belong to GRP_APP , then these LDOs still be
+		 * turned on and turn off when system resume.
+		 * Sometimes these LDO keep on while system in retention mode.
+		 * It cause VOCRE3 keep about 0.3 V.
+		 */
+		/*VMMC_CFG_GRP*/
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x0,0x98);
+		/*VPP_CFG_GRP */
+		twl_i2c_write_u8(TWL6030_MODULE_ID0, 0x0,0x9C);
 		/* Print some useful registers at boot up */
 		pr_info("TWL603x Boot Information:\n");
 		twl_i2c_read_u8(TWL6030_MODULE_ID0, &twl_reg, PHOENIX_START_CONDITION);

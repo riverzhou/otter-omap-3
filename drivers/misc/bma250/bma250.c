@@ -1536,7 +1536,7 @@ static void bma250_work_func(struct work_struct *work)
 	bma250->reported_value = acc; 
     queue_delayed_work(bma_work_queue ,
                         &bma250->work , 
-                        msecs_to_jiffies(delay));
+                        delay);
 }
 
 static void bma250_stopwork_func(struct work_struct *work)
