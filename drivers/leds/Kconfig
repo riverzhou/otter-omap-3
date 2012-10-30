@@ -388,7 +388,7 @@ config LEDS_OMAP_PWM
 	depends on LEDS_CLASS && ARCH_OMAP && OMAP_DM_TIMER
 	help
 	  This options enables support for LEDs connected to GPIO lines
-	  controlled by a PWM timer on OMAP CPUs.
+          controlled by a PWM timer on OMAP CPUs.
 
 config LEDS_NS2
 	tristate "LED support for Network Space v2 GPIO LEDs"
