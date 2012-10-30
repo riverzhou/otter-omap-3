@@ -6,7 +6,6 @@
 
 config SENSETEK_I2C_SENSORS
 	bool "SenseTek I2C Sensors"
-	depends on I2C
 	help
 	  Say Y here, and a list of miscellaneous sensor drivers will be displayed.
 	  Everything that didn't fit into the other categories is here. This option
@@ -258,13 +257,6 @@ config STK_ALS_TRANSMITTANCE
 	 Depending on your cover lens and coating
  	 If unsured, please use the default value (500)
  	 500 means 5%
-
-config CM_ALS_TRANSMITTANCE
-	int "CM3263 Transmittance (1/10,000)"
-	depends on (STK_ALS22x7)
-	default "169"
-	---help---
-	Usually, this setting will be 1/4 of STK 2207 
 
 config STK_SYSFS_DBG
     bool "Enable STK Optical Sensor Engineering Mode"

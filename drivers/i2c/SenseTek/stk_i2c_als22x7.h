@@ -46,9 +46,6 @@ struct stkals22x7_data {
 	uint32_t als_delay;
 	uint8_t bThreadRunning;
 	uint8_t reg1,reg2;
-#ifdef CONFIG_HAS_EARLYSUSPEND
-	struct early_suspend early_suspend;
-#endif
 
 };
 
