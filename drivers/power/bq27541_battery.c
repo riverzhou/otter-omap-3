@@ -19,6 +19,7 @@
 #include <linux/i2c.h>
 #include <linux/slab.h>
 #include <asm/unaligned.h>
+#include <linux/reboot.h>
 //#include <linux/metricslog.h>
 #include <plat/led.h>
 #include "kc1_summit/smb347.h"
@@ -30,6 +31,8 @@
 #endif
 #endif
 #undef BAT_LOG
+#include <linux/reboot.h>
+#include <linux/syscalls.h>
 
 struct bq27541_info  {
     struct i2c_client           *bat_client;
@@ -160,13 +163,15 @@ static int fake_temp;static int fake_full_available_capacity;
 
 #define BQ27541_LONG_COUNT	6
 
+#define BQ27541_VOLT_CRIT_THRESHOLD	3200	/* Critically low voltage threshold in mV */
+
 static int check_manufacturer(struct bq27541_info *di);
 
 
 extern void twl6030_poweroff(void);
 
 /*Hard low battery protection*/
-#define HARD_LOW_VOLTAGE_THRESHOLD 3350000
+#define HARD_LOW_VOLTAGE_THRESHOLD 3250000
 #define RECHARGE_THRESHOLD 90
 int bq275xx_register_notifier(struct notifier_block *nb)
 {
@@ -395,7 +400,9 @@ int bq27x00_battery_status(struct bq27541_info *di,int* value)
         dev_err(di->dev, "error reading flags\n");
         return ret;
     }
-    if (flags & BQ27500_FLAG_FC)
+    if ((flags & BQ27500_FLAG_FC)
+		&& (di->capacity == 100)
+		&& (di->current_avg == 0))
         *value = POWER_SUPPLY_STATUS_FULL;
     else if (flags & BQ27500_FLAG_DSC)
         *value = POWER_SUPPLY_STATUS_DISCHARGING;
@@ -731,7 +738,24 @@ void bat_monitor_work_func(struct work_struct *work)
 		                //If android with weak battery has some problem and not be shutdown then driver need to turn off the system.
 				if((di->voltage <= HARD_LOW_VOLTAGE_THRESHOLD)
 						&& (di->status==POWER_SUPPLY_STATUS_DISCHARGING))
-					blocking_notifier_call_chain(&notifier_list, EVENT_WEAK_BATTERY, NULL);
+				    orderly_poweroff(true);
+			}
+
+			/* Check for critical battery voltage */
+			if (di->voltage <= BQ27541_VOLT_CRIT_THRESHOLD) {
+				printk(KERN_WARNING
+					"bq27541: battery has reached critically low level, "
+					"shutting down...\n");
+
+#ifdef CONFIG_LAB126
+				char buf[128];
+
+				snprintf(buf, sizeof(buf),
+					"bq27541:def:critical_shutdown=1:");
+				log_to_metrics(ANDROID_LOG_INFO, "battery", buf);
+#endif
+				sys_sync();
+				orderly_poweroff(true);
 			}
 		}
 

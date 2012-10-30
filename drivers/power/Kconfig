@@ -206,12 +206,6 @@ config CHARGER_PCF50633
 	help
 	 Say Y to include support for NXP PCF50633 Main Battery Charger.
 
-config SUMMIT_SMB347
-	tristate "Summit SMB347 USB Charger IC"
-	depends on BATTERY_BQ27541
-	help
-	  Say Y to enable support for the Summit SMB347 USB Charger IC
-
 config BATTERY_JZ4740
 	tristate "Ingenic JZ4740 battery"
 	depends on MACH_JZ4740
