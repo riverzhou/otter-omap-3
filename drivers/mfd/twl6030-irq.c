@@ -39,10 +39,8 @@
 #include <linux/platform_device.h>
 #include <linux/suspend.h>
 #include <linux/reboot.h>
-#include <linux/delay.h>
-#include <linux/wakelock.h>
-#include <linux/gpio.h>
 
+#include <linux/wakelock.h>
 #include "twl-core.h"
 
 /*
@@ -124,6 +122,7 @@ static int *twl6030_interrupt_mapping = twl6030_interrupt_mapping_table;
 static unsigned twl6030_irq_base, twl6030_irq_end;
 static int twl_irq;
 static bool twl_irq_wake_enabled;
+
 static struct wake_lock vlow_wakelock;
 static struct task_struct *task;
 static struct completion irq_event;
@@ -177,7 +176,6 @@ static int twl6030_irq_thread(void *data)
 	static unsigned i2c_errors;
 	static const unsigned max_i2c_errors = 100;
 	int ret;
-	u8 usb_charge_sts = 0, usb_charge_sts1 = 0, usb_charge_sts2 = 0;
 
 	current->flags |= PF_NOFREEZE;
 
@@ -189,7 +187,6 @@ static int twl6030_irq_thread(void *data)
 		} sts;
 		u32 int_sts; /* sts.int_sts converted to CPU endianness */
 
-		u8 bz[4] = {0,0,0,0};
 		/* Wait for IRQ, then read PIH irq status (also blocking) */
 		wait_for_completion_interruptible(&irq_event);
 
@@ -208,33 +205,8 @@ static int twl6030_irq_thread(void *data)
 			complete(&irq_event);
 			continue;
 		}
-		ret = twl_i2c_write(TWL_MODULE_PIH, bz,
-				REG_INT_STS_A, 3); /* clear INT_STS_A */
-		if (ret){
-			pr_info("twl6030: I2C error in clearing PIH ISR\n");		
-			for(i=0;i<=20;i++){
-				ret = twl_i2c_write(TWL_MODULE_PIH, bz,
-					REG_INT_STS_A, 3); /* clear INT_STS_A */
-				if (ret){
-					pr_info("twl6030: I2C error in clearing PIH ISR\n");	
-				}else
-					break;				
-				msleep(10);
-			}
-		}
 
-		/*
-                 * NOTE:
-                 * Simulation confirms that documentation is wrong w.r.t the
-                 * interrupt status clear operation. A single *byte* write to
-                 * any one of STS_A to STS_C register results in all three
-                 * STS registers being reset. Since it does not matter which
-                 * value is written, all three registers are cleared on a
-                 * single byte write, so we just use 0x0 to clear.
-                 */
-                ret = twl_i2c_write_u8(TWL_MODULE_PIH, 0x00, REG_INT_STS_A);
-                if (ret)
-                        pr_warning("twl6030: I2C error in clearing PIH ISR\n");
+
 
 		sts.bytes[3] = 0; /* Only 24 bits are valid*/
 
@@ -266,11 +238,9 @@ static int twl6030_irq_thread(void *data)
 		 * value is written, all three registers are cleared on a
 		 * single byte write, so we just use 0x0 to clear.
 		 */
-#if 0
 		ret = twl_i2c_write_u8(TWL_MODULE_PIH, 0x00, REG_INT_STS_A);
 		if (ret)
 			pr_warning("twl6030: I2C error in clearing PIH ISR\n");
-#endif
 
 		enable_irq(irq);
 	}
@@ -308,8 +278,6 @@ static irqreturn_t handle_twl6030_vlow(int irq, void *unused)
 	wake_lock_timeout(&vlow_wakelock,
 		msecs_to_jiffies(VLOW_TEMPORARY_HOLD_TIME));
 	twl6030_interrupt_mask(VLOW_INT_MASK, REG_INT_MSK_STS_A);
-	// disable_irq_nosync(twl6030_irq_base + TWL_VLOW_INTR_OFFSET);
-	// WARN_ON(1);
 #else
 	pr_emerg("handle_twl6030_vlow: kernel_power_off()\n");
 	kernel_power_off();
@@ -509,7 +477,7 @@ int twl6030_vlow_init(int vlow_irq)
 	}
 #endif
 	vbatmin_hi_threshold = VBAT_MONITORING_THRESHOLD;
-	twl_i2c_read_u8(TWL_MODULE_PM_MASTER, &vbatmin_hi_threshold,
+	twl_i2c_write_u8(TWL_MODULE_PM_MASTER, vbatmin_hi_threshold,
 			TWL6030_VBATMIN_HI_THRESHOLD);
 
 	/* install an irq handler for vlow */
@@ -521,6 +489,7 @@ int twl6030_vlow_init(int vlow_irq)
 				status);
 		return status;
 	}
+
 	wake_lock_init(&vlow_wakelock, WAKE_LOCK_SUSPEND, "vlow");
 	return 0;
 }
@@ -570,6 +539,7 @@ int twl6030_init_irq(int irq_num, unsigned irq_base, unsigned irq_end,
 	twl6030_irq_next = i;
 	pr_info("twl6030: %s (irq %d) chaining IRQs %d..%d\n", "PIH",
 			irq_num, irq_base, twl6030_irq_next - 1);
+
 	/* install an irq handler to demultiplex the TWL6030 interrupt */
 	init_completion(&irq_event);
 	task = kthread_run(twl6030_irq_thread, (void *)irq_num, "twl6030-irq");
