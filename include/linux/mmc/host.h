@@ -344,8 +344,6 @@ extern int mmc_power_restore_host(struct mmc_host *host);
 extern void mmc_detect_change(struct mmc_host *, unsigned long delay);
 extern void mmc_request_done(struct mmc_host *, struct mmc_request *);
 
-extern void mmc_flush_scheduled_work(void);
-
 static inline void mmc_signal_sdio_irq(struct mmc_host *host)
 {
 	host->ops->enable_sdio_irq(host, 0);
@@ -390,6 +388,8 @@ static inline void mmc_set_disable_delay(struct mmc_host *host,
 
 /* Module parameter */
 extern int mmc_assume_removable;
+
+extern void mmc_flush_scheduled_work(void);
 
 static inline int mmc_card_is_removable(struct mmc_host *host)
 {
