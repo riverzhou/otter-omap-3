@@ -144,7 +144,7 @@
  * using a 16bit integer in 1 ADMA table row.
  * Hence rounding it to a lesser value.
  */
-#define ADMA_MAX_XFER_PER_ROW (60 * 1024)
+#define ADMA_MAX_XFER_PER_ROW (63 * 1024)
 #define ADMA_MAX_BLKS_PER_ROW (ADMA_MAX_XFER_PER_ROW / 512)
 
 
@@ -2870,6 +2870,10 @@ static void omap_hsmmc_shutdown(struct platform_device *pdev)
 	host->shutdown = 1;
 	cancel_delayed_work(&host->mmc->detect);
 	mmc_flush_scheduled_work();
+
+	/* Disable mmc interrupts on shutdown of driver */
+	if (host)
+		free_irq(host->irq, host);
 
 	/* MMC spec gives 800ms min for card housekeeping.
 	   Leave it on the safe side */
