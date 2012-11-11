@@ -2642,6 +2642,8 @@ static struct clk timer10_fck = {
 	.enable_reg	= OMAP4430_CM_L4PER_DMTIMER10_CLKCTRL,
 	.enable_bit	= OMAP4430_MODULEMODE_SWCTRL,
 	.clkdm_name	= "l4_per_clkdm",
+/* HASH: Need a better check here */
+	.flags          = ENABLE_ON_INIT,
 };
 
 /* Merged cm2_dm11_mux into timer11 */
