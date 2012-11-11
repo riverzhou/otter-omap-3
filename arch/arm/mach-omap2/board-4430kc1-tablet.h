@@ -17,8 +17,6 @@
 #ifndef _MACH_OMAP_BOARD_4430KC1_TABLET_H
 #define _MACH_OMAP_BOARD_4430KC1_TABLET_H
 
-#define OMAP4_CHARGER_IRQ		7
-
 void omap4_create_board_props(void);
 
 void omap4_power_init(void);

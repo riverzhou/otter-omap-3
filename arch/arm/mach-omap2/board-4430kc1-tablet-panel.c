@@ -125,13 +125,13 @@ static struct spi_board_info tablet_spi_board_info[] __initdata = {
 	},
 };
 
-static void __init sdp4430_init_display_led(void)
+static void sdp4430_init_display_led(void)
 {
 	twl_i2c_write_u8(TWL_MODULE_PWM, 0xFF, LED_PWM2ON);
 	twl_i2c_write_u8(TWL_MODULE_PWM, 0x7F, LED_PWM2OFF);
 	//twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x30, TWL6030_TOGGLE3);
-    twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x08, TWL6030_TOGGLE3);
-    twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x38, TWL6030_TOGGLE3);
+    	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x08, TWL6030_TOGGLE3);
+    	twl_i2c_write_u8(TWL6030_MODULE_ID1, 0x38, TWL6030_TOGGLE3);
 }
 
 static void sdp4430_set_primary_brightness(u8 brightness)
@@ -204,8 +204,6 @@ void omap4_kc1_android_display_setup(struct omap_ion_platform_data *ion)
 
 void __init omap4_kc1_display_init(void)
 {
-	int ret;
-
 	omapfb_set_platform_data(&sdp4430_fb_data);
 
 	spi_register_board_info(tablet_spi_board_info,	ARRAY_SIZE(tablet_spi_board_info));
