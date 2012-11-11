@@ -34,9 +34,18 @@
 #include <linux/slab.h>
 #include <linux/i2c/twl.h>
 #include <linux/delay.h>
+#include <linux/metricslog.h>
+#include <linux/wakelock.h>
+#include <linux/leds.h>
+#include <linux/jiffies.h>
+#include <linux/workqueue.h>
+#include <plat/led.h>
 
 #define PWR_PWRON_IRQ (1 << 0)
 #define STS_HW_CONDITIONS 0x21
+
+static struct wake_lock pwrbutton_wakelock;
+static struct delayed_work pwrbutton_work;
 
 struct twl6030_pwr_button {
 	struct input_dev *input_dev;
@@ -73,31 +82,120 @@ static inline int twl6030_writeb(struct twl6030_pwr_button *twl, u8 module,
 	return ret;
 }
 
+static void pwrbutton_work_func(struct work_struct *work)
+{
+	u8 value = 0;
+
+	/* Switch off LED if it's not connected to USB */
+	if (!twl_i2c_read_u8(TWL6030_MODULE_CHARGER, &value, 0x03)
+			&& !(value & (1 << 2))) {
+		omap4430_orange_led_set(NULL, 0);
+		omap4430_green_led_set(NULL, 0);
+	}
+
+	wake_unlock(&pwrbutton_wakelock);
+}
+
+
+
+
+
 static irqreturn_t powerbutton_irq(int irq, void *_pwr)
 {
 	struct twl6030_pwr_button *pwr = _pwr;
 	int hw_state;
 	int pwr_val;
-	static int prev_hw_state = 0xFFFF;
-	static int push_release_flag;
+	static int prev_hw_state = -EINVAL;
+	int err;
+	u8 value;
+	static int missed_press_flag;
+
+#ifdef CONFIG_LAB126
+	char *action;
+	char buf[128];
+#endif
 
 	hw_state = twl6030_readb(pwr, TWL6030_MODULE_ID0, STS_HW_CONDITIONS);
+	err = twl_i2c_read_u8(TWL6030_MODULE_ID0, &value,STS_HW_CONDITIONS);
 	pwr_val = !(hw_state & PWR_PWRON_IRQ);
-	if ((prev_hw_state != pwr_val) && (prev_hw_state != 0xFFFF)) {
-		push_release_flag = 0;
+
+#ifdef CONFIG_LAB126
+        action = pwr_val ? "press" : "release";
+        sprintf(buf, "%s:powi%c:caught=%s:", __func__, action[0], action);
+        log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
+#endif
+
+	if (pwr_val)
+		missed_press_flag = 0;
+
+	if (prev_hw_state != pwr_val) {
+		if ( (prev_hw_state == -EINVAL) && (!pwr_val) ) {
+                        input_report_key(pwr->input_dev, pwr->report_key, 1);
+                        input_sync(pwr->input_dev);
+			msleep(20);
+#ifdef CONFIG_LAB126
+			sprintf(buf, "%s:powip:action=inject first press", __func__);
+			log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
+#endif
+			missed_press_flag=1;
+                }
+
 		input_report_key(pwr->input_dev, pwr->report_key, pwr_val);
 		input_sync(pwr->input_dev);
-	} else if (!push_release_flag) {
-		push_release_flag = 1;
-		input_report_key(pwr->input_dev, pwr->report_key, !pwr_val);
+		/* Check if we are connected to USB */
+		if (!twl_i2c_read_u8(TWL6030_MODULE_CHARGER,&value, 0x03) && !(value & (1 << 2))) {
+					/*
+					 * No USB, hold a partial wakelock,
+					 * scheduled a work 2 seconds later
+					 * to switch off the LED
+					 */
+					
+					wake_lock(&pwrbutton_wakelock);
+					cancel_delayed_work_sync(&pwrbutton_work);
+					omap4430_orange_led_set(NULL, 0);
+					omap4430_green_led_set(NULL, 255);
+            
+					schedule_delayed_work(&pwrbutton_work,
+						msecs_to_jiffies(2000));
+        }
+#ifdef CONFIG_LAB126
+		action = pwr_val ? "press" : "release";
+		sprintf(buf, "%s:powi%c:report=%s:", __func__, action[0], action);
+		log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
+#endif
+	} else if (missed_press_flag) {
+		/*Missed press will result in 2 received releases*/
+		missed_press_flag=0;
+		return IRQ_HANDLED;
+	} else if (!pwr_val) {
+		input_report_key(pwr->input_dev, pwr->report_key, 1);
 		input_sync(pwr->input_dev);
-
+		/* Check if we are connected to USB */
+		if (!twl_i2c_read_u8(TWL6030_MODULE_CHARGER,&value, 0x03) && !(value & (1 << 2))) {
+					/*
+					 * No USB, hold a partial wakelock,
+					 * scheduled a work 2 seconds later
+					 * to switch off the LED
+					 */
+					
+					wake_lock(&pwrbutton_wakelock);
+					cancel_delayed_work_sync(&pwrbutton_work);
+					omap4430_orange_led_set(NULL, 0);
+					omap4430_green_led_set(NULL, 255);
+            
+					schedule_delayed_work(&pwrbutton_work,
+						msecs_to_jiffies(2000));
+		}
 		msleep(20);
 
+#ifdef CONFIG_LAB126
+		sprintf(buf, "%s:powip:action=inject press-release:", __func__);
+		log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
+#endif
 		input_report_key(pwr->input_dev, pwr->report_key, pwr_val);
 		input_sync(pwr->input_dev);
-	} else
-		push_release_flag = 0;
+		missed_press_flag=1;
+	}
 
 	prev_hw_state = pwr_val;
 
@@ -150,6 +248,12 @@ static int __devinit twl6030_pwrbutton_probe(struct platform_device *pdev)
 	twl6030_interrupt_unmask(0x01, REG_INT_MSK_STS_A);
 
 	platform_set_drvdata(pdev, pwr_button);
+	
+	/* Set up wakelock */
+	wake_lock_init(&pwrbutton_wakelock, WAKE_LOCK_SUSPEND, "twl6030-pwrbutton");
+
+	/* Set up delayed work */
+	INIT_DELAYED_WORK(&pwrbutton_work, pwrbutton_work_func);
 
 	return 0;
 
