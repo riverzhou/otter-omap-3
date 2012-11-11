@@ -770,4 +770,3 @@ config TOUCHSCREEN_ILITEK
 	  This is the i2c version of the driver.
 
 	  To compile this driver as a module, choose M here.
-endif
