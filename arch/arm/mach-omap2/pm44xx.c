@@ -1335,7 +1335,9 @@ static irqreturn_t prcm_interrupt_handler (int irq, void *dev_id)
 	if (irqstatus_mpu & OMAP4430_IO_ST_MASK) {
 		/* Check if HSI caused the IO wakeup */
 		omap_hsi_io_wakeup_check();
+#ifdef CONFIG_SERIAL_OMAP
 		omap_uart_resume_idle();
+#endif
 		usbhs_wakeup();
 		omap_debug_uart_resume_idle();
 		omap4_trigger_ioctrl();
