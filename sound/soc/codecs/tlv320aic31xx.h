@@ -27,20 +27,16 @@
  *
  * Rev 0.7   Ported to 3.0 Kernel			20-01-2012
  */
-
 #ifndef _TLV320AIC31xx_H
 #define _TLV320AIC31XX_H
 
+#include <linux/switch.h>
+#include <linux/input.h>
 
 #define AIC31XX_VERSION "0.1"
 
-/* #define AIC31x_CODEC_DEBUG 1 */
+/*#define AIC31x_CODEC_DEBUG 1*/
 
-#ifdef AIC31x_CODEC_DEBUG
-#define DBG(x...) printk(KERN_INFO x)
-#else
-#define DBG(x...)
-#endif
 
 
 /*
@@ -49,6 +45,12 @@
  * Audio Codec Driver.
  */
 #define AIC3110_CODEC_SUPPORT
+
+#if defined(CONFIG_OTTER2)
+	#define CONFIG_MINIDSP
+#else /* CONFIG_OTTER2 */
+	#define USE DRC
+#endif /* CONFIG_OTTER2 */
 
 #ifdef AIC3110_CODEC_SUPPORT
 
@@ -83,7 +85,6 @@
 
 #define AUDIO_NAME "aic3100"
 #define AIC3100_VERSION "0.1"
-
 #endif
 
 /* Enable register caching on write */
@@ -220,19 +221,25 @@
 #define BEEP_SINX_LSB			77
 #define BEEP_COSX_MSB			78
 #define BEEP_COSX_LSB			79
+#define ADC_DIG_MIC			81
+#define	ADC_FGA				82
+#define	ADC_CGA				83
 
-
-#define ADC_DIG_MIC			    81
-#define	ADC_FGA				    82
-#define	ADC_CGA				    83
-
+/*Channel AGC Control Register 1*/
 #define AGC_CTRL_1			    86
+/*Channel AGC Control Register 2*/
 #define AGC_CTRL_2			    87
+/*Channel AGC Control Register 3 */
 #define AGC_CTRL_3			    88
+/*Channel AGC Control Register 4 */
 #define AGC_CTRL_4			    89
+/*Channel AGC Control Register 5 */
 #define AGC_CTRL_5			    90
+/*Channel AGC Control Register 6 */
 #define AGC_CTRL_6			    91
+/*Channel AGC Control Register 7 */
 #define AGC_CTRL_7			    92
+/* AGC Gain applied reading (RO) */
 #define AGC_CTRL_8			    93
 
 #define ADC_DC_1			    102
@@ -269,9 +276,6 @@
 #define R_MICPGA_P			(PAGE_1 + 55)
 #define R_MICPGA_N			(PAGE_1 + 57)
 
-#define PAGE_3				(128 * 3)
-#define TIMER_CLOCK_MCLK_DIVIDER	(PAGE_3 + 16)
-
 /****************************************************************************/
 /****************************************************************************/
 #define BIT7		(1 << 7)
@@ -298,6 +302,7 @@
 #define SOFT_RESET			0x01
 #define PAGE0				0x00
 #define PAGE1				0x01
+#define CLEAR				0x00
 #define BIT_CLK_MASTER			BIT3
 #define WORD_CLK_MASTER			BIT2
 #define	HIGH_PLL			BIT6
@@ -307,6 +312,8 @@
 #define ENABLE_NADC			BIT7
 #define ENABLE_MADC			BIT7
 #define ENABLE_BCLK			BIT7
+#define ENABLE_DAC			(0x03 << 6)
+#define ENABLE_ADC			BIT7
 #define LDAC_2_LCHN			BIT4
 #define RDAC_2_RCHN			BIT2
 #define RDAC_2_RAMP			BIT2
@@ -315,11 +322,11 @@
 #define RDAC_CHNL_2_HPR			BIT3
 #define LDAC_LCHN_RCHN_2		(BIT4 | BIT5)
 #define SOFT_STEP_2WCLK			BIT0
+
 #define MUTE_ON				0x0C
 /* DEFAULT VOL MODIFIED [OLD VAL = 0XFC & 0x81] */
 #define DAC_DEFAULT_VOL			0xB0
-/* HP DEFAULT VOL Updated from -78.3db to -16db */
-#define HP_DEFAULT_VOL			0x20
+#define HP_DEFAULT_VOL			0x75
 #define SPK_DEFAULT_VOL			0x75
 #define DISABLE_ANALOG			BIT3
 #define LDAC_2_HPL_ROUTEON		BIT3
@@ -360,6 +367,7 @@
 #define HP_DEBOUNCE_128_MS	(BIT3 | BIT2)
 #define HP_DEBOUNCE_256_MS	BIT4
 #define HP_DEBOUNCE_512_MS	(BIT4 | BIT2)
+#define HP_DEBOUNCE_TIME_IN_MS	(64)
 
 /*HS DETECT ENABLE*/
 #define HS_DETECT_EN		BIT7
@@ -436,7 +444,6 @@ struct aic31xx_configs {
 	u8 reg_val;
 };
 
-
 struct aic31xx_jack_data {
 	struct snd_soc_jack *jack;
 	int report;
@@ -468,16 +475,20 @@ struct aic31xx_priv {
 	u8  headset_current_status;
 	u8  power_status;
 	u8  playback_status;
+	u8 capture_stream;
+	u8 from_resume;
 	struct mutex mutex_codec;
+	struct mutex mutex_page; /* Register access lock */
 	struct snd_soc_codec codec;
 	u8 i2c_regs_status;
 	u32 hp_driver_pop_time;
 	u32 hp_driver_ramp_time;
 	u8 playback_stream;	/* 1 denotes Playback */
-	u8 record_stream;	/* 1 denotes Capture */
+	u8 current_process_flow;
 	struct aic31xx_configs hp_analog_right_vol[120];
 	struct aic31xx_configs hp_analog_left_vol[120];
 	struct aic31xx_jack_data hs_jack;
+	struct input_dev *idev;
 };
 
 /*
@@ -549,17 +560,7 @@ extern struct snd_soc_dai_driver tlv320aic31xx_dai[];
  */
 extern struct snd_soc_codec_driver soc_codec_dev_aic31xx;
 
-/* Extern Function Declaration for Headset Speaker Path Detection */
-extern int aic31xx_headset_speaker_path (struct snd_soc_codec *codec, int gpio_status);
-extern u8 aic31xx_abe_fixup;
 extern int aic31xx_mic_check(struct snd_soc_codec *codec);
 extern int aic31xx_startup(struct snd_pcm_substream *, struct snd_soc_codec *);
-
-extern void aic31xx_hs_jack_report(struct snd_soc_codec *codec,
-			    struct snd_soc_jack *jack, int report);
-
-extern void aic31xx_hs_jack_detect(struct snd_soc_codec *codec,
-			    struct snd_soc_jack *jack, int report);
-
 
 #endif /* _TLV320AIC31XX_H */

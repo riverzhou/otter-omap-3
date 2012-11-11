@@ -50,11 +50,10 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/gpio.h>
+
 #include <linux/clk.h>
 #include <linux/platform_device.h>
 #include <linux/i2c.h>
-#include <linux/switch.h>
-
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -62,6 +61,7 @@
 #include <sound/soc-dapm.h>
 #include <sound/jack.h>
 #include <sound/soc-dsp.h>
+#include <linux/delay.h>
 
 #include <asm/mach-types.h>
 #include <mach/hardware.h>
@@ -75,10 +75,10 @@
 #include "omap-dmic.h"
 #include "abe/abe_main.h"
 #include "../codecs/tlv320aic31xx.h"
-// #include "../../fm/fm34.h"
+//#include "../../fm/fm34.h"
 
 /* Global I2c Client Structure used for registering with I2C Bus */
-//static struct i2c_client *tlv320aic31xx_client;
+static struct i2c_client *tlv320aic31xx_client;
 
 /* Forward Declaration */
 static int Qoo_headset_jack_status_check(void);
@@ -86,6 +86,7 @@ static int Qoo_headset_jack_status_check(void);
 /* Headset jack information structure */
 static struct snd_soc_jack hs_jack;
 
+static int first_hs_spk_trans_ignored = 0;
 /*
  * omap4_hw_params
  * This function is to configure the Machine Driver
@@ -96,21 +97,18 @@ static int omap4_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
-//	struct snd_soc_codec *codec = rtd->codec;
 
 	void __iomem *phymux_base = NULL;
 	int ret, gpio_status;
-	DBG("%s: Entered\n", __func__);
+	dev_dbg(cpu_dai->dev, "%s: Entered\n", __func__);
 
 	/* Recording will not happen if headset is not inserted */
 	gpio_status = gpio_get_value(Qoo_HEADSET_DETECT_GPIO_PIN);
 
-#if 0
 	if (substream->stream != SNDRV_PCM_STREAM_PLAYBACK) {
-		fm34_mode_switch(gpio_status);
-		printk(KERN_INFO "FM34 mode and interface switch..\n");
+	//	fm34_mode_switch(gpio_status);
+		dev_info(cpu_dai->dev, "FM34 mode and interface switch..\n");
 	}
-#endif
 
 	/* Set codec DAI configuration */
 	ret = snd_soc_dai_set_fmt(codec_dai,
@@ -118,10 +116,10 @@ static int omap4_hw_params(struct snd_pcm_substream *substream,
 				  SND_SOC_DAIFMT_NB_NF |
 				  SND_SOC_DAIFMT_CBM_CFM);
 	if (ret < 0) {
-		printk(KERN_ERR "can't set codec DAI configuration\n");
+		dev_err(cpu_dai->dev, "can't set codec DAI configuration\n");
 		return ret;
 	}
-	DBG("snd_soc_dai_set_fmt passed..\n");
+	dev_dbg(cpu_dai->dev, "snd_soc_dai_set_fmt passed..\n");
 
 	/* Set cpu DAI configuration */
 	ret = snd_soc_dai_set_fmt(cpu_dai,
@@ -129,10 +127,10 @@ static int omap4_hw_params(struct snd_pcm_substream *substream,
 				  SND_SOC_DAIFMT_NB_NF |
 				  SND_SOC_DAIFMT_CBM_CFM);
 	if (ret < 0) {
-		printk(KERN_ERR "can't set cpu DAI configuration\n");
+		dev_err(cpu_dai->dev, "can't set cpu DAI configuration\n");
 		return ret;
 	}
-	DBG("snd_soc_dai_set_fmt passed...\n");
+	dev_dbg(cpu_dai->dev, "snd_soc_dai_set_fmt passed...\n");
 
 	/* Enabling the 19.2 Mhz Master Clock Output from OMAP4 for KC1 Board */
 	phymux_base = ioremap(0x4a30a000, 0x1000);
@@ -152,12 +150,15 @@ static int omap4_hw_params(struct snd_pcm_substream *substream,
 	ret = snd_soc_dai_set_sysclk(codec_dai, 0, AIC31XX_FREQ_19200000,
 				     SND_SOC_CLOCK_IN);
 	if (ret < 0) {
-		printk(KERN_ERR "can't set codec system clock\n");
+		dev_err(cpu_dai->dev, "can't set codec system clock\n");
 		return ret;
 	}
 
-	DBG("omap4_hw_params passed...\n");
-       return 0;
+	dev_dbg(cpu_dai->dev, "%s() - sample rate: %d channels: %d\n",
+		 __func__ , params_rate(params), params_channels(params));
+
+	dev_dbg(cpu_dai->dev, "omap4_hw_params passed...\n");
+	return 0;
 }
 
 /*
@@ -181,11 +182,11 @@ static struct snd_soc_ops omap4_ops = {
  */
 static struct snd_soc_jack_pin hs_jack_pins[] = {
 	{
-		.pin = "Headset Mic",
+		.pin = "HSMIC",
 		.mask = SND_JACK_MICROPHONE,
 	},
 	{
-		.pin = "Headset Stereophone",
+		.pin = "Headphone Jack",
 		.mask = SND_JACK_HEADPHONE,
 	},
 };
@@ -206,7 +207,11 @@ static struct snd_soc_jack_gpio hs_jack_gpios[] = {
 		.gpio = Qoo_HEADSET_DETECT_GPIO_PIN,
 		.name = "hsdet-gpio",
 		.report = SND_JACK_HEADSET,
+#if defined(CONFIG_MINIDSP)
+		.debounce_time = 240,
+#else
 		.debounce_time = 200,
+#endif
 		.jack_status_check = Qoo_headset_jack_status_check,
 	},
 };
@@ -238,6 +243,11 @@ static const struct snd_soc_dapm_widget omap4_aic31xx_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Onboard Mic", mic_power_up_event),
 };
 
+static const struct snd_kcontrol_new omap4_aic31xx_controls[]={
+	SOC_DAPM_PIN_SWITCH("HSMIC"),
+	SOC_DAPM_PIN_SWITCH("Speaker Jack"),
+	SOC_DAPM_PIN_SWITCH("Headphone Jack"),
+};
 static const struct snd_soc_dapm_route audio_map[] = {
 	/* External Speakers: HFL, HFR */
 	{"Speaker Jack", NULL, "SPL"},
@@ -265,56 +275,56 @@ static int omap4_aic31xx_init(struct snd_soc_pcm_runtime *rtd)
 {
 	struct snd_soc_codec *codec = rtd->codec;
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
+	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	struct device *dev = cpu_dai->dev;
 	int ret = 0;
-//	int gpiostatus;
 
-	printk(KERN_INFO "entered the omap4_aic31xx_init function....\n");
+	dev_info(dev, "entered the omap4_aic31xx_init function....\n");
 
 	/* Add OMAP4 specific widgets */
 	ret = snd_soc_dapm_new_controls(dapm, omap4_aic31xx_dapm_widgets,
 					ARRAY_SIZE(omap4_aic31xx_dapm_widgets));
 	if (ret) {
-		printk(KERN_INFO "snd_soc_dapm_new_controls failed.\n");
+		dev_err(dev, "snd_soc_dapm_new_controls failed.\n");
 		return ret;
 	}
-	DBG("snd_soc_dapm_new_controls passed..\n");
+	dev_dbg(dev, "snd_soc_dapm_new_controls passed..\n");
 
+
+	ret = snd_soc_add_controls(codec,omap4_aic31xx_controls,ARRAY_SIZE(omap4_aic31xx_controls));
+	if(ret)
+	{
+		dev_err(dev,"snd_soc_add_controls failed..\n");
+		return ret;
+	}
+	dev_dbg(dev,"snd_soc_add_controls passed\n");
 	/* Set up OMAP4 specific audio path audio_map */
 	ret = snd_soc_dapm_add_routes(dapm, audio_map, ARRAY_SIZE(audio_map));
 
 	if (ret != 0)
-		printk(KERN_INFO "snd_soc_dapm_add_routes failed..%d\n", ret);
-
-	ret = snd_soc_dapm_sync(dapm);
-	if (ret != 0) {
-		printk(KERN_INFO "snd_soc_dapm_sync failed... %d\n", ret);
-		return ret;
-	}
-
+		dev_err(dev, "snd_soc_dapm_add_routes failed..%d\n", ret);
 	/* Headset jack detection */
 	ret = snd_soc_jack_new(codec, "Headset Jack",
 			       SND_JACK_HEADSET, &hs_jack);
 	if (ret != 0) {
-		printk(KERN_INFO "snd_soc_jack_new failed...\n");
+		dev_err(dev, "snd_soc_jack_new failed...\n");
 		return ret;
 	}
 
 	ret = snd_soc_jack_add_pins(&hs_jack, ARRAY_SIZE(hs_jack_pins),
 				    hs_jack_pins);
 	if (ret != 0) {
-		printk(KERN_INFO "snd_soc_jack_add_pins failed... %d\n", ret);
+		dev_err(dev, "snd_soc_jack_add_pins failed... %d\n", ret);
 		return ret;
 	}
 
 	ret = snd_soc_jack_add_gpios(&hs_jack, ARRAY_SIZE(hs_jack_gpios),
 				     hs_jack_gpios);
 
-	aic31xx_hs_jack_detect(codec, &hs_jack, SND_JACK_HEADSET);
-	Qoo_headset_jack_status_check();
-
-	DBG("%s: Exiting\n", __func__);
+	dev_dbg(dev, "%s: Exiting\n", __func__);
 	return ret;
 }
+
 
 /*
  * Qoo_headset_jack_status_check
@@ -322,41 +332,62 @@ static int omap4_aic31xx_init(struct snd_soc_pcm_runtime *rtd)
  */
 static int Qoo_headset_jack_status_check(void)
 {
-	int gpio_status, ret = 0, state = 0;
-//	struct aic31xx_priv *private_data;
+	int gpio_status, ret = 0, hs_status = 0;
 	struct snd_soc_codec *codec = hs_jack.codec;
+	struct aic31xx_priv *priv = snd_soc_codec_get_drvdata(codec);
 	struct snd_soc_dapm_context *dapm = &codec->dapm;
+#if defined(ENABLE_HS_BUTTON_PRESS)
+	int button_press = 0;
+#endif
 
 	gpio_status = gpio_get_value(Qoo_HEADSET_DETECT_GPIO_PIN);
+	dev_info(codec->dev, "#Entered %s\n", __func__);
 
 	if (hs_jack.codec != NULL) {
-		printk(KERN_INFO " codec is  not null\n");
-
+		dev_dbg(codec->dev, " codec is  not null\n");
 		if (!gpio_status) {
-			state = SND_JACK_HEADSET;
-			printk(KERN_INFO "headset connected\n");
-			snd_soc_dapm_disable_pin(dapm, "Speaker Jack");
-			snd_soc_dapm_enable_pin(dapm, "Headphone Jack");
+			dev_info(codec->dev,"headset connected\n");
 
 			if (aic31xx_mic_check(codec)) {
-				printk(KERN_INFO "Headset with MIC Detected -- Recording possible.\n");
-				snd_soc_dapm_enable_pin(dapm, "HSMIC");
+
+				dev_info(codec->dev, "Headset with MIC \
+						Detected Recording possible.\n");
+				hs_status = 1;
 			} else {
-				printk(KERN_INFO "Headset without MIC Inserted -- Recording not possible...\n");
+				dev_info(codec->dev, "Headset without MIC \
+						Inserted Recording not possible...\n");
+				hs_status = (1<<1);
 			}
-			ret = snd_soc_dapm_sync(dapm);
+
+#if defined(ENABLE_HS_BUTTON_PRESS)
+			button_press = codec->read(codec, DAC_INTR_STATUS);
+			dev_info( codec->dev, "r46=0x%x\n", button_press);
+			button_press = codec->read(codec, SHORT_CKT_FLAG);
+			dev_info( codec->dev, "r44=0x%x\n", button_press);
+			if (0x20 & button_press) {
+				dev_info( codec->dev, "hook button press down\n");
+				hs_status = hs_status | 0x0200;
+				input_report_key(priv->idev, KEY_MEDIA, 1);
+				mdelay(50);
+				input_report_key(priv->idev, KEY_MEDIA, 0);
+				input_sync(priv->idev);
+				dev_info(codec->dev, "input_report_key is ok\n");
+			}
+#endif
 
 		} else {
-			printk(KERN_INFO "headset not connected\n");
-			snd_soc_dapm_enable_pin(dapm,  "Speaker Jack");
-			snd_soc_dapm_disable_pin(dapm, "HSMIC");
-			snd_soc_dapm_disable_pin(dapm, "Headphone Jack");
-			ret = snd_soc_dapm_sync(dapm);
-		}
-		aic31xx_hs_jack_report(codec, &hs_jack, !!state);
+				dev_info(codec->dev, "headset not connected\n");
+				hs_status = 0;
+			}
+	switch_set_state(&priv->hs_jack.sdev, hs_status);
+	priv->headset_connected = !gpio_status;
+	dev_info(codec->dev, "##%s : switch state = %d\n",
+			__func__, !gpio_status);
+
+	dev_dbg(codec->dev, "%s: Exiting\n", __func__);
+	return ret;
+
 	}
-	DBG("%s: Exiting\n", __func__);
-	return state;
 }
 
 /*
@@ -366,56 +397,59 @@ static int Qoo_headset_jack_status_check(void)
  */
 
 static int mcbsp_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
-			struct snd_pcm_hw_params *params)
+		struct snd_pcm_hw_params *params)
 {
 	struct snd_interval *channels = hw_param_interval(params,
-				       SNDRV_PCM_HW_PARAM_CHANNELS);
+			SNDRV_PCM_HW_PARAM_CHANNELS);
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
 	unsigned int be_id;
 	unsigned int threshold;
 	unsigned int val, min_mask;
-	DBG("%s: CPU DAI %s BE_ID %d\n", __func__, cpu_dai->name, \
-						rtd->dai_link->be_id);
+	/*struct snd_interval *rate = hw_param_interval(params,
+	  SNDRV_PCM_HW_PARAM_RATE);*/
+	dev_dbg(cpu_dai->dev, "%s: CPU DAI %s BE_ID %d\n",
+			__func__, cpu_dai->name, rtd->dai_link->be_id);
 
-//	struct snd_interval *rate = hw_param_interval(params,
-//			SNDRV_PCM_HW_PARAM_RATE);
+
 	be_id = rtd->dai_link->be_id;
 
 	switch (be_id) {
-	case OMAP_ABE_DAI_MM_FM:
-		channels->min = 2;
-		threshold = 2;
-		val = SNDRV_PCM_FORMAT_S16_LE;
-		break;
-	case OMAP_ABE_DAI_BT_VX:
-		channels->min = 1;
-		threshold = 1;
-		val = SNDRV_PCM_FORMAT_S16_LE;
-		break;
-	default:
-		threshold = 1;
-		val = SNDRV_PCM_FORMAT_S16_LE;
-		break;
+		case OMAP_ABE_DAI_MM_FM:
+			channels->min = 2;
+			threshold = 2;
+			val = SNDRV_PCM_FORMAT_S16_LE;
+			break;
+		case OMAP_ABE_DAI_BT_VX:
+			channels->min = 1;
+			threshold = 1;
+			val = SNDRV_PCM_FORMAT_S16_LE;
+			break;
+		default:
+			threshold = 1;
+			val = SNDRV_PCM_FORMAT_S16_LE;
+			break;
 	}
 
 	min_mask = snd_mask_min(&params->masks[SNDRV_PCM_HW_PARAM_FORMAT -
-					       SNDRV_PCM_HW_PARAM_FIRST_MASK]);
+			SNDRV_PCM_HW_PARAM_FIRST_MASK]);
 
-	DBG("%s: Returned min_mask 0x%x Format %x\n", __func__, min_mask, val);
+	dev_dbg(cpu_dai->dev, "%s: Returned min_mask 0x%x Format %x\n",
+			__func__, min_mask, val);
 
 	snd_mask_reset(&params->masks[SNDRV_PCM_HW_PARAM_FORMAT -
-				      SNDRV_PCM_HW_PARAM_FIRST_MASK],
-				      min_mask);
+			SNDRV_PCM_HW_PARAM_FIRST_MASK],
+			min_mask);
 
-	DBG("%s: Returned min_mask 0x%x Format %x\n", __func__, min_mask, val);
+	dev_dbg(cpu_dai->dev, "%s: Returned min_mask 0x%x Format %x\n",
+			__func__, min_mask, val);
 
 	snd_mask_set(&params->masks[SNDRV_PCM_HW_PARAM_FORMAT -
-				    SNDRV_PCM_HW_PARAM_FIRST_MASK], val);
+			SNDRV_PCM_HW_PARAM_FIRST_MASK], val);
 
 	omap_mcbsp_set_tx_threshold(cpu_dai->id, threshold);
 	omap_mcbsp_set_rx_threshold(cpu_dai->id, threshold);
 
-	DBG("%s: Exiting\n", __func__);
+	dev_dbg(cpu_dai->dev, "%s: Exiting\n", __func__);
 	return 0;
 }
 
@@ -441,6 +475,34 @@ static const char *mm1_be[] = {
 
 static const char *mm_lp_be[] = {
 		OMAP_ABE_BE_MM_EXT0_DL,
+};
+
+/* ABE Port configuration structure introduced within the
+* DAI_LINK Structure as private_data void pointer member
+*/
+t_port_config mm_ext0_config = {
+	/* uplink port configuration */
+	.abe_port_id_ul = MM_EXT_IN_PORT,
+	.serial_id_ul = MCBSP3_RX,
+	.sample_format_ul = STEREO_RSHIFTED_16,
+#ifdef CONFIG_ABE_44100
+	.sample_rate_ul = 44100,
+#else
+	.sample_rate_ul = 48000,
+#endif
+	.bit_reorder_ul = 0,
+
+	/* down link port configuration */
+	.abe_port_id_dl = MM_EXT_OUT_PORT,
+	.serial_id_dl = MCBSP3_TX,
+	.sample_format_dl = STEREO_RSHIFTED_16,
+#ifdef CONFIG_ABE_44100
+	.sample_rate_dl = 44100,
+#else
+	.sample_rate_dl = 48000,
+#endif
+
+	.bit_reorder_dl = 0,
 };
 
 /* DAI_LINK Structure definition with both Front-End and
@@ -530,6 +592,7 @@ static struct snd_soc_dai_link omap4_dai_abe[] = {
 		.be_hw_params_fixup = mcbsp_be_hw_params_fixup,
 		.ops = &omap4_ops,
 		.be_id = OMAP_ABE_DAI_MM_FM,
+		.private_data = &mm_ext0_config,
 		.init = omap4_aic31xx_init,
 		.ignore_suspend = 1,
 	},
@@ -549,6 +612,7 @@ static struct snd_soc_dai_link omap4_dai_abe[] = {
 		.be_hw_params_fixup = mcbsp_be_hw_params_fixup,
 		.ops = &omap4_ops,
 		.be_id = OMAP_ABE_DAI_MM_FM,
+		.private_data = &mm_ext0_config,
 		.ignore_suspend = 1,
 	},
 };
@@ -579,7 +643,6 @@ static int __init omap4_panda_soc_init(void)
 	printk(KERN_INFO "OMAP4 EVT SoC init\n");
 
 	omap4_snd_device = platform_device_alloc("soc-audio", -1);
-
 	if (!omap4_snd_device) {
 		printk(KERN_ERR "Platform device allocation failed\n");
 		return -ENOMEM;
@@ -616,7 +679,7 @@ static void __exit omap4_soc_exit(void)
 				hs_jack_gpios);
 
 	platform_device_unregister(omap4_snd_device);
-//	i2c_unregister_device(tlv320aic31xx_client);
+	i2c_unregister_device(tlv320aic31xx_client);
 }
 module_exit(omap4_soc_exit);
 
