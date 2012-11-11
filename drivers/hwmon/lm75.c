@@ -29,6 +29,7 @@
 #include <linux/mutex.h>
 #include "lm75.h"
 
+
 /*
  * This driver handles the LM75 and compatible digital temperature sensors.
  */
@@ -64,8 +65,6 @@ static const u8 LM75_REG_TEMP[3] = {
 	0x02,		/* hyst */
 };
 
-#define LM75_TCRITICAL			78000
-
 /* Each client has this additional data */
 struct lm75_data {
 	struct device		*hwmon_dev;
@@ -84,7 +83,6 @@ static int lm75_write_value(struct i2c_client *client, u8 reg, u16 value);
 static struct lm75_data *lm75_update_device(struct device *dev);
 
 
-
 /*-----------------------------------------------------------------------*/
 
 /* sysfs attributes for hwmon */
@@ -94,11 +92,6 @@ static ssize_t show_temp(struct device *dev, struct device_attribute *da,
 {
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
 	struct lm75_data *data = lm75_update_device(dev);
-
-	/* Driver fail-safe to shut down the system */
-	if (attr->index==0 && LM75_TEMP_FROM_REG(data->temp[attr->index]) >= LM75_TCRITICAL && pm_power_off)
-		pm_power_off();
-
 	return sprintf(buf, "%d\n",
 		       LM75_TEMP_FROM_REG(data->temp[attr->index]));
 }
