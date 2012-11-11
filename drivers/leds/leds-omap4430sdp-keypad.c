@@ -152,6 +152,7 @@ static int omap4430_keypad_led_probe(struct platform_device *pdev)
 	info->keypad_led_class_dev.brightness_set =
 			omap4430_green_led_set;
 	info->keypad_led_class_dev.max_brightness = LED_FULL;
+	info->keypad_led_class_dev.max_thermal_brightness = LED_FULL;
 	info->keypad_led_class_dev.brightness = LED_OFF;
 	info->keypad_led_class_dev.blink_set = omap4430_green_led_set_blink;
     init_timer(&info->timer);
@@ -187,34 +188,36 @@ static int omap4430_keypad_led_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int omap4430_keypad_led_suspend(struct platform_device *pdev, pm_message_t state)
+static int omap4430_keypad_led_suspend(struct platform_device *pdev,
+		pm_message_t state)
 {
-    printk("!!!!!!!%s!!!!!!!!!!\n",__func__);
-    struct keypad_led_data *info = platform_get_drvdata(pdev);
-    omap4430_green_led_set(&info->keypad_led_class_dev,LED_OFF);
-	
-	
+	struct keypad_led_data *info;
+
+	info = platform_get_drvdata(pdev);
+	omap4430_green_led_set(&info->keypad_led_class_dev, LED_OFF);
+
 	return 0;
 }
 
 static int omap4430_keypad_led_resume(struct platform_device *pdev)
 {
-    struct keypad_led_data *info = platform_get_drvdata(pdev);
-    omap4430_green_led_set(&info->keypad_led_class_dev,LED_OFF);
-	printk("!!!!!!!%s!!!!!!!!!!\n",__func__);
-	
+	struct keypad_led_data *info;
+
+	info = platform_get_drvdata(pdev);
+	omap4430_green_led_set(&info->keypad_led_class_dev, LED_OFF);
+
 	return 0;
 }
 
 static struct platform_driver omap4430_keypad_led_driver = {
-	.probe = omap4430_keypad_led_probe,
-	.remove = omap4430_keypad_led_remove,
-        .suspend	= omap4430_keypad_led_suspend,
-	.resume		= omap4430_keypad_led_resume,
-	.driver = {
-		   .name = "keypad_led",
-		   .owner = THIS_MODULE,
-		   },
+	.probe   = omap4430_keypad_led_probe,
+	.remove  = omap4430_keypad_led_remove,
+	.suspend = omap4430_keypad_led_suspend,
+	.resume	 = omap4430_keypad_led_resume,
+	.driver  = {
+		.name = "keypad_led",
+		.owner = THIS_MODULE,
+	},
 };
 
 static int __init omap4430_keypad_led_init(void)
