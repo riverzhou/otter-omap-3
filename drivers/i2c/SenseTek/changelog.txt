@@ -1,4 +1,7 @@
 *******************
+v1.55 2011/3/25 Maintenance Man : Patrick Chang
+Modify STK3128/3101 -> fix endianess issue
+*******************
 v1.51 2011/3/18 Maintenance Man : Patrick Chang
 Modify all ALS drivers to support input event system.
 Remove R-set setting (use "Transmittance" setting to cover)

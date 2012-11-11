@@ -32,30 +32,23 @@ drwxr-xr-x root     root              2000-11-05 22:16 DBG
 #define ALS_NAME "lightsensor-level"
 #define PS_NAME "proximity"
 
-#define STK_ENABLE_SENSOR_USE_BINARY_SYSFS 0
-
-#define ps_enable_bin_path              "/sys/devices/platform/stk-oss/ps_enable_bin"
-#define als_enable_bin_path             "/sys/devices/platform/stk-oss/als_enable_bin"
-#define ps_distance_mode_bin_path       "/sys/devices/platform/stk-oss/ps_dist_mode_bin"
-#define ps_distance_range_bin_path      "/sys/devices/platform/stk-oss/distance_range_bin"
-#define als_lux_range_bin_path          "/sys/devices/platform/stk-oss/lux_range_bin"
-
-/* <---- DEPRECATED */
-#define ps_min_delay_bin_path			"/sys/devices/platform/stk-oss/ps_min_delay_bin"
-#define als_min_delay_bin_path			"/sys/devices/platform/stk-oss/als_min_delay_bin"
-#define ps_delay_bin_path				"/sys/devices/platform/stk-oss/ps_delay_bin"
-#define als_delay_bin_path				"/sys/devices/platform/stk-oss/als_delay_bin"
-/* DEPRECATED ----> */
-
 #define ps_enable_path              "/sys/devices/platform/stk-oss/ps_enable"
 #define als_enable_path             "/sys/devices/platform/stk-oss/als_enable"
-#define ps_distance_mode_path       "/sys/devices/platform/stk-oss/dist_mode"
+#define ps_distance_mode_path       "/sys/devices/platform/stk-oss/ps_dist_mode"
 #define ps_distance_range_path      "/sys/devices/platform/stk-oss/distance_range"
 #define als_lux_range_path          "/sys/devices/platform/stk-oss/lux_range"
 
-#define STK_DRIVER_VER          "1.5.8"
+
+/* <---- DEPRECATED */
+#define ps_min_delay_path			"/sys/devices/platform/stk-oss/ps_min_delay"
+#define als_min_delay_path			"/sys/devices/platform/stk-oss/als_min_delay"
+#define ps_delay_path				"/sys/devices/platform/stk-oss/ps_delay"
+#define als_delay_path				"/sys/devices/platform/stk-oss/als_delay"
+/* DEPRECATED ----> */
+
 
 #define EVENT_TYPE_PROXIMITY        ABS_DISTANCE
 #define EVENT_TYPE_LIGHT            ABS_MISC
+
 
 #endif // __STK_DEFINE_H
