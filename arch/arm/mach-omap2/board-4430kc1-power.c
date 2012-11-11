@@ -197,6 +197,11 @@ static struct twl4030_madc_platform_data sdp4430_gpadc_data = {
 	.irq_line = -1,
 };
 
+#define SUMMIT_STAT 31
+static struct twl6030_qcharger_platform_data kc1_charger_data={
+        .interrupt_pin = OMAP4_CHARGER_IRQ,
+};
+
 static struct regulator_init_data sdp4430_clk32kg = {
 	.constraints = {
 		.valid_modes_mask	= REGULATOR_MODE_NORMAL,
