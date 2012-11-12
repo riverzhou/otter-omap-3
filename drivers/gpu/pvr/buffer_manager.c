@@ -1751,7 +1751,7 @@ DevMemoryFree (BM_MAPPING *pMapping)
 }
 
 #ifndef XPROC_WORKAROUND_NUM_SHAREABLES
-#define XPROC_WORKAROUND_NUM_SHAREABLES 200
+#define XPROC_WORKAROUND_NUM_SHAREABLES 2000
 #endif
 
 #define XPROC_WORKAROUND_BAD_SHAREINDEX 0773407734
@@ -1774,6 +1774,14 @@ static struct {
 	IMG_VOID *pvCpuVAddr;
 	IMG_HANDLE hOSMemHandle;
 } gXProcWorkaroundShareData[XPROC_WORKAROUND_NUM_SHAREABLES] = {{0}};
+
+IMG_INT32 BM_XProcGetShareDataRefCount(IMG_UINT32 ui32Index)
+{
+	if(ui32Index >= XPROC_WORKAROUND_NUM_SHAREABLES)
+		return -1;
+
+	return gXProcWorkaroundShareData[ui32Index].ui32RefCount;
+}
 
 PVRSRV_ERROR BM_XProcWorkaroundSetShareIndex(IMG_UINT32 ui32Index)
 {

@@ -733,6 +733,12 @@ serial_omap_configure_xonxoff
 	if (termios->c_iflag & IXOFF)
 		up->efr |= OMAP_UART_SW_TX;
 
+	/* NSR: Is this really needed? */
+	if(up->pdev->id == UART2) {
+		up->efr |= OMAP_UART_SW_TX;
+		up->efr |= OMAP_UART_SW_RX;
+	}
+
 	serial_out(up, UART_EFR, up->efr | UART_EFR_ECB);
 	serial_out(up, UART_LCR, UART_LCR_CONF_MODE_A);
 
@@ -945,6 +951,8 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 		serial_out(up, UART_TI752_TCR, OMAP_UART_TCR_TRIG);
 
 		up->efr |= (UART_EFR_CTS | UART_EFR_RTS);
+		up->efr &= ~(OMAP_UART_SW_TX | OMAP_UART_SW_RX);
+
 		serial_out(up, UART_EFR, up->efr); /* Enable AUTORTS and AUTOCTS */
 		serial_out(up, UART_LCR, UART_LCR_CONF_MODE_A);
 		up->mcr |= UART_MCR_RTS;
@@ -960,7 +968,8 @@ serial_omap_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	serial_omap_set_mctrl(&up->port, up->port.mctrl);
 	/* Software Flow Control Configuration */
-	serial_omap_configure_xonxoff(up, termios);
+	if (termios->c_iflag & (IXON | IXOFF))
+		serial_omap_configure_xonxoff(up, termios);
 
 	/* Now we are ready for RX data: enable rts line */
 	if (up->rts_mux_driver_control && up->rts_pullup_in_suspend) {

@@ -34,6 +34,9 @@
 #include <linux/slab.h>
 #include <linux/i2c/twl.h>
 #include <linux/delay.h>
+#ifdef CONFIG_LAB126
+#include <linux/metricslog.h>
+#endif
 
 #define PWR_PWRON_IRQ (1 << 0)
 #define STS_HW_CONDITIONS 0x21
@@ -78,24 +81,62 @@ static irqreturn_t powerbutton_irq(int irq, void *_pwr)
 	struct twl6030_pwr_button *pwr = _pwr;
 	int hw_state;
 	int pwr_val;
-	static int prev_hw_state = 0xFFFF;
+	static int prev_hw_state = -EINVAL;
+	static int missed_press_flag;
+
+#ifdef CONFIG_LAB126
+	char *action;
+	char buf[128];
+#endif
 
 	hw_state = twl6030_readb(pwr, TWL6030_MODULE_ID0, STS_HW_CONDITIONS);
 	pwr_val = !(hw_state & PWR_PWRON_IRQ);
+
+#ifdef CONFIG_LAB126
+        action = pwr_val ? "press" : "release";
+        sprintf(buf, "%s:powi%c:caught=%s:", __func__, action[0], action);
+        log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
+#endif
+
+	if (pwr_val)
+		missed_press_flag = 0;
+
 	if (prev_hw_state != pwr_val) {
-		input_report_key(pwr->input_dev, pwr->report_key,
-							pwr_val);
+		if ( (prev_hw_state == -EINVAL) && (!pwr_val) ) {
+                        input_report_key(pwr->input_dev, pwr->report_key, 1);
+                        input_sync(pwr->input_dev);
+			msleep(20);
+#ifdef CONFIG_LAB126
+			sprintf(buf, "%s:powip:action=inject first press", __func__);
+			log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
+#endif
+			missed_press_flag=1;
+                }
+
+		input_report_key(pwr->input_dev, pwr->report_key, pwr_val);
 		input_sync(pwr->input_dev);
-	} else {
-		input_report_key(pwr->input_dev, pwr->report_key,
-							!pwr_val);
+#ifdef CONFIG_LAB126
+		action = pwr_val ? "press" : "release";
+		sprintf(buf, "%s:powi%c:report=%s:", __func__, action[0], action);
+		log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
+#endif
+	} else if (missed_press_flag) {
+		/*Missed press will result in 2 received releases*/
+		missed_press_flag=0;
+		return;
+	} else if (!pwr_val) {
+		input_report_key(pwr->input_dev, pwr->report_key, 1);
 		input_sync(pwr->input_dev);
 
 		msleep(20);
 
-		input_report_key(pwr->input_dev, pwr->report_key,
-							pwr_val);
+#ifdef CONFIG_LAB126
+		sprintf(buf, "%s:powip:action=inject press-release:", __func__);
+		log_to_metrics(ANDROID_LOG_INFO, "PowerKeyEvent", buf);
+#endif
+		input_report_key(pwr->input_dev, pwr->report_key, pwr_val);
 		input_sync(pwr->input_dev);
+		missed_press_flag=1;
 	}
 
 	prev_hw_state = pwr_val;

@@ -92,6 +92,10 @@ void tf_dump_answer(union tf_answer *answer);
 
 int tf_get_current_process_hash(void *hash);
 
+#ifndef CONFIG_ANDROID
+int tf_hash_application_path_and_data(char *buffer, void *data, u32 data_len);
+#endif /* !CONFIG_ANDROID */
+
 /*----------------------------------------------------------------------------
  * Statistic computation
  *----------------------------------------------------------------------------*/
@@ -115,3 +119,4 @@ int internal_get_user_pages(
 void internal_get_page(struct page *page);
 void internal_page_cache_release(struct page *page);
 #endif  /* __TF_UTIL_H__ */
+

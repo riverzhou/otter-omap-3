@@ -46,6 +46,7 @@ enum lm75_type {		/* keep sorted in alphabetical order */
 	tcn75,
 	tmp100,
 	tmp101,
+	tmp103,
 	tmp105,
 	tmp175,
 	tmp275,
@@ -72,6 +73,8 @@ struct lm75_data {
 	u8			orig_conf;
 	char			valid;		/* !=0 if registers are valid */
 	unsigned long		last_updated;	/* In jiffies */
+	u8			byte_access;	/* Device requires byte access
+						   to the temperature register */
 	u16			temp[3];	/* Register values,
 						   0 = input
 						   1 = max
@@ -161,6 +164,7 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
 	/* Set to LM75 resolution (9 bits, 1/2 degree C) and range.
 	 * Then tweak to be more precise when appropriate.
 	 */
+
 	set_mask = 0;
 	clr_mask = (1 << 0)			/* continuous conversions */
 		| (1 << 6) | (1 << 5);		/* 9-bit mode */
@@ -191,6 +195,12 @@ lm75_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 	dev_info(&client->dev, "%s: sensor '%s'\n",
 		 dev_name(data->hwmon_dev), client->name);
+
+	if (id->driver_data == tmp103) {
+		dev_info(&client->dev, "%s: sensor is TMP103\n",
+			dev_name(data->hwmon_dev));
+		data->byte_access = 1;
+	}
 
 	return 0;
 
@@ -224,6 +234,7 @@ static const struct i2c_device_id lm75_ids[] = {
 	{ "tcn75", tcn75, },
 	{ "tmp100", tmp100, },
 	{ "tmp101", tmp101, },
+	{ "tmp103", tmp103, },
 	{ "tmp105", tmp105, },
 	{ "tmp175", tmp175, },
 	{ "tmp275", tmp275, },
@@ -373,15 +384,23 @@ static struct i2c_driver lm75_driver = {
  * All registers are word-sized, except for the configuration register.
  * LM75 uses a high-byte first convention, which is exactly opposite to
  * the SMBus standard.
+ *
+ * Note: For some sensors like TMP103, the temperature register is
+ *       byte-sized and care must be taken during reading
  */
 static int lm75_read_value(struct i2c_client *client, u8 reg)
 {
+	struct lm75_data *data = i2c_get_clientdata(client);
 	int value;
 
 	if (reg == LM75_REG_CONF)
 		return i2c_smbus_read_byte_data(client, reg);
 
-	value = i2c_smbus_read_word_data(client, reg);
+	if (data->byte_access && reg == 0x00) {
+		value = i2c_smbus_read_byte_data(client, reg);
+	} else {
+		value = i2c_smbus_read_word_data(client, reg);
+	}
 	return (value < 0) ? value : swab16(value);
 }
 

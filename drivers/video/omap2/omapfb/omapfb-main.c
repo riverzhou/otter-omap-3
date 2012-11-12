@@ -29,6 +29,7 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/omapfb.h>
+#include <linux/cpufreq.h>
 
 #include <video/omapdss.h>
 #include <plat/vram.h>
@@ -1295,6 +1296,7 @@ static int omapfb_blank(int blank, struct fb_info *fbi)
 	struct omapfb2_device *fbdev = ofbi->fbdev;
 	struct omap_dss_device *display = fb2display(fbi);
 	int r = 0;
+	enum panel_status {OFF, ON};
 
 	if (!display)
 		return -EINVAL;
@@ -1303,6 +1305,11 @@ static int omapfb_blank(int blank, struct fb_info *fbi)
 
 	switch (blank) {
 	case FB_BLANK_UNBLANK:
+		/*
+		 * hint cpufreq governor
+		 */
+		send_panel_hint(ON);
+
 		if (display->state == OMAP_DSS_DISPLAY_SUSPENDED) {
 			if (display->driver->resume)
 				r = display->driver->resume(display);
@@ -1321,6 +1328,10 @@ static int omapfb_blank(int blank, struct fb_info *fbi)
 	case FB_BLANK_POWERDOWN:
 		if (display->state != OMAP_DSS_DISPLAY_ACTIVE)
 			goto exit;
+		/*
+		 * hint cpufreq governor
+		 */
+		send_panel_hint(OFF);
 
 		if (display->driver->suspend)
 			r = display->driver->suspend(display);

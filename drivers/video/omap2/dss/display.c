@@ -355,14 +355,14 @@ int omapdss_default_get_recommended_bpp(struct omap_dss_device *dssdev)
 {
 	switch (dssdev->type) {
 	case OMAP_DISPLAY_TYPE_DPI:
-		if (dssdev->phy.dpi.data_lines == 24)
+		if (dssdev->phy.dpi.data_lines > 16)
 			return 24;
 		else
 			return 16;
 
 	case OMAP_DISPLAY_TYPE_DBI:
 	case OMAP_DISPLAY_TYPE_DSI:
-		if (dssdev->ctrl.pixel_size == 24)
+		if (dssdev->ctrl.pixel_size > 16)
 			return 24;
 		else
 			return 16;
@@ -534,6 +534,11 @@ static int dss_resume_device(struct device *dev, void *data)
 {
 	int r;
 	struct omap_dss_device *dssdev = to_dss_device(dev);
+
+	if (!dssdev->activate_after_resume && !strcmp(dssdev->name, "hdmi")) {
+		if (hdmi_get_current_hpd())
+			hdmi_panel_hpd_handler(1);
+	}
 
 	if (dssdev->activate_after_resume && dssdev->driver->resume) {
 		r = dssdev->driver->resume(dssdev);

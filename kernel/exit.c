@@ -51,6 +51,7 @@
 #include <trace/events/sched.h>
 #include <linux/hw_breakpoint.h>
 #include <linux/oom.h>
+#include <linux/trapz.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -988,6 +989,9 @@ NORET_TYPE void do_exit(long code)
 	if (group_dead)
 		acct_process();
 	trace_sched_process_exit(tsk);
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_SCHED, Exit, "in do_exit about to exit_thread");
+	TRAPZ_LOG(TRAPZ_LOG_VERBOSE, 0, TRAPZ_KERN_SCHED, Exit, tsk->tgid, tsk->pid);
 
 	exit_sem(tsk);
 	exit_files(tsk);

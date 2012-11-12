@@ -2,9 +2,24 @@
 # Makefile for the linux kernel.
 #
 
+# FIXME: For OMAP4 target - the sequence of Obj-files inclusion in
+# 	Makefile is strictly related to sequence of the Kernel xxx_initcall
+# 	functions calls. Any changes in the sequence of Obj-files inclusion
+# 	in this file should be done carefully and can cause unpredictable
+# 	system behaviour - especially it can have impact on OMAP4 PM
+# 	initialization procedure.
+#
+# Known valid sequence:
+# 	- pm.o
+# 	- sr_device.o
+# 	- smartreflex.o
+# 	- smartreflex-class3.o
+# 	- smartreflex-class1p5.o
+# 	- pm44xx.o
+
 # Common support
 obj-y := id.o io.o control.o mux.o devices.o serial.o gpmc.o timer-gp.o pm.o \
-	 common.o gpio.o dma.o wd_timer.o omap_pmic.o dmtimer.o
+	 common.o gpio.o dma.o wd_timer.o omap_pmic.o dmtimer.o bowser_idme_init.o
 
 omap-2-3-common				= irq.o sdrc.o
 hwmod-common				= omap_hwmod.o \
@@ -23,6 +38,7 @@ obj-$(CONFIG_TWL4030_CORE) += omap_twl.o
 obj-$(CONFIG_OMAP_TPS6236X) += omap_tps6236x.o
 obj-$(CONFIG_OMAP_TEMP_SENSOR) +=temp_sensor_device.o
 obj-$(CONFIG_OMAP4_PCB_SENSOR) += pcb_temp_sensor_device.o
+obj-$(CONFIG_CASE_TEMP_SENSOR) += case_temp_sensor_device.o
 
 # SMP support ONLY available for OMAP4
 obj-$(CONFIG_SMP)			+= omap-smp.o omap-headsmp.o
@@ -61,8 +77,10 @@ obj-$(CONFIG_ARCH_OMAP3)		+= opp3xxx_data.o
 obj-$(CONFIG_ARCH_OMAP4)		+= opp4xxx_data.o
 endif
 
-# CPUFREQ driver
-obj-$(CONFIG_CPU_FREQ)			+= omap2plus-cpufreq.o
+# Smartreflex AVS initialization
+obj-$(CONFIG_OMAP_SMARTREFLEX)          += sr_device.o smartreflex.o
+obj-$(CONFIG_OMAP_SMARTREFLEX_CLASS3)	+= smartreflex-class3.o
+obj-$(CONFIG_OMAP_SMARTREFLEX_CLASS1P5)	+= smartreflex-class1p5.o
 
 # Power Management
 ifeq ($(CONFIG_PM),y)
@@ -77,9 +95,6 @@ obj-$(CONFIG_PM_DEBUG)			+= pm-debug.o
 ifeq ($(CONFIG_PM_DEBUG),y)
 obj-$(CONFIG_ARCH_OMAP4)		+= prcm-debug.o
 endif
-obj-$(CONFIG_OMAP_SMARTREFLEX)          += sr_device.o smartreflex.o
-obj-$(CONFIG_OMAP_SMARTREFLEX_CLASS3)	+= smartreflex-class3.o
-obj-$(CONFIG_OMAP_SMARTREFLEX_CLASS1P5)	+= smartreflex-class1p5.o
 
 AFLAGS_sleep24xx.o			:=-Wa,-march=armv6
 AFLAGS_sleep34xx.o			:=-Wa,-march=armv7-a$(plus_sec)
@@ -90,6 +105,9 @@ CFLAGS_pm_bus.o				+= -DDEBUG
 endif
 
 endif
+
+# CPUFREQ driver
+obj-$(CONFIG_CPU_FREQ)			+= omap2plus-cpufreq.o
 
 # PRCM
 obj-$(CONFIG_ARCH_OMAP2)		+= prcm.o cm2xxx_3xxx.o prm2xxx_3xxx.o
@@ -259,6 +277,18 @@ obj-$(CONFIG_MACH_OMAP_4430SDP)		+= board-4430sdp.o \
 					   hsmmc.o \
 					   omap_phy_internal.o \
 					   omap4_apps_brd_id.o
+obj-$(CONFIG_MACH_OMAP4_BOWSER)		+= board-bowser4.o \
+					   board-bowser-bluetooth.o \
+					   board-blaze-touch.o \
+					   board-bowser-panel.o \
+					   board-blaze-keypad.o \
+					   board-blaze-sensors.o \
+					   board-44xx-identity.o \
+					   hsmmc.o \
+					   omap_phy_internal.o \
+					   omap4_apps_brd_id.o	\
+					   board-bowser-wifi.o
+obj-$(CONFIG_TOUCHSCREEN_CYPRESS_TTSP)  += board-touch-cyttsp4_core.o
 obj-$(CONFIG_MACH_OMAP_BLAZE)		+= board-44xx-tablet.o \
 					   board-44xx-identity.o \
 					   board-44xx-tablet-touch.o \

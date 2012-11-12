@@ -32,9 +32,10 @@
 #include <linux/gpio.h>
 #include <linux/slab.h>
 #include <linux/mutex.h>
+#include <linux/i2c.h>
 
 #include <video/omapdss.h>
-#include <video/omap-panel-tc358765.h>
+#include <video/omap-panel-generic.h>
 
 #include "panel-tc358765.h"
 
@@ -60,9 +61,9 @@ struct tc358765_data {
 	int channel1;
 };
 
-static struct tc358765_board_data *get_board_data(struct omap_dss_device *dssdev)
+static struct panel_board_data *get_board_data(struct omap_dss_device *dssdev)
 {
-	return (struct tc358765_board_data *)dssdev->data;
+	return (struct panel_board_data *)dssdev->data;
 }
 
 static int tc358765_read_register(struct omap_dss_device *dssdev, u16 reg)
@@ -143,7 +144,7 @@ static void tc358765_get_resolution(struct omap_dss_device *dssdev,
 
 static int tc358765_hw_reset(struct omap_dss_device *dssdev)
 {
-	struct tc358765_board_data *board_data = get_board_data(dssdev);
+	struct panel_board_data *board_data = get_board_data(dssdev);
 
 	if (board_data == NULL || board_data->reset_gpio == -1)
 		return 0;
@@ -162,19 +163,46 @@ static int tc358765_hw_reset(struct omap_dss_device *dssdev)
 	return 0;
 }
 
+static int tc358765_lcd_enable(struct omap_dss_device *dssdev)
+{
+	struct panel_board_data *board_data = get_board_data(dssdev);
+
+	if (board_data->lcd_en_gpio == -1)
+		return -1;
+
+	gpio_set_value(board_data->lcd_en_gpio, 1);
+	dev_dbg(&dssdev->dev, "tc358765_lcd_enable\n");
+
+	return 0;
+}
+
+static int tc358765_lcd_disable(struct omap_dss_device *dssdev)
+{
+	struct panel_board_data *board_data = get_board_data(dssdev);
+
+	if (board_data->lcd_en_gpio == -1)
+		return -1;
+
+	gpio_set_value(board_data->lcd_en_gpio, 0);
+	dev_dbg(&dssdev->dev, "tc358765_lcd_disable\n");
+
+	return 0;
+}
+
 static int tc358765_probe(struct omap_dss_device *dssdev)
 {
 	struct tc358765_data *d2d;
-	struct tc358765_board_data *board_data = get_board_data(dssdev);
 	int r = 0;
 
 	dev_dbg(&dssdev->dev, "tc358765_probe\n");
 
-	tc358765_timings.x_res = board_data->x_res;
-	tc358765_timings.y_res = board_data->y_res;
 	dssdev->panel.config = OMAP_DSS_LCD_TFT;
 	dssdev->panel.timings = tc358765_timings;
+#if defined (CONFIG_PANEL_SAMSUNG_LTL089CL01)
+	dssdev->ctrl.pixel_size = 18;
+#else
 	dssdev->ctrl.pixel_size = 24;
+#endif
 	dssdev->panel.acbi = 0;
 	dssdev->panel.acb = 40;
 
@@ -230,7 +258,16 @@ static struct
 	/* this register setting is required only if host wishes to
 	 * perform DSI read transactions
 	 */
-	{ PPI_TX_RX_TA, 0x00000004 },
+#if defined (CONFIG_PANEL_SAMSUNG_LTL089CL01)
+	{ PPI_TX_RX_TA, 0x0008000B },
+	/* SYSLPTX Timing Generation Counter */
+	{ PPI_LPTXTIMECNT, 0x00000007 },
+	/* D*S_CLRSIPOCOUNT = [(THS-SETTLE + THS-ZERO) / HS_byte_clock_period ] */
+	{ PPI_D0S_CLRSIPOCOUNT, 0x00000007 },
+	{ PPI_D1S_CLRSIPOCOUNT, 0x00000007 },
+	{ PPI_D2S_CLRSIPOCOUNT, 0x00000007 },
+	{ PPI_D3S_CLRSIPOCOUNT, 0x00000007 },
+#else
 	/* SYSLPTX Timing Generation Counter */
 	{ PPI_LPTXTIMECNT, 0x00000004 },
 	/* D*S_CLRSIPOCOUNT = [(THS-SETTLE + THS-ZERO) / HS_byte_clock_period ] */
@@ -238,6 +275,7 @@ static struct
 	{ PPI_D1S_CLRSIPOCOUNT, 0x00000003 },
 	{ PPI_D2S_CLRSIPOCOUNT, 0x00000003 },
 	{ PPI_D3S_CLRSIPOCOUNT, 0x00000003 },
+#endif
 	/* SpeedLaneSel == HS4L */
 	{ DSI_LANEENABLE, 0x0000001F },
 	/* SpeedLaneSel == HS4L */
@@ -247,18 +285,41 @@ static struct
 	/* Changed to 1 */
 	{ DSI_STARTDSI, 0x00000001 },
 
+#if defined (CONFIG_PANEL_SAMSUNG_LTL089CL01)
+	{ LVPHY0, 0x00448006 },
+	{ LVPHY0, 0x00048006 },
+	{ LVMX0003, 0x05040302 },
+	{ LVMX0407, 0x0A070106 },
+	{ LVMX0811, 0x09080C0B },
+	{ LVMX1215, 0x120F0E0D },
+	{ LVMX1619, 0x14131110 },
+	{ LVMX2023, 0x1B171615 },
+	{ LVMX2427, 0x001A1918 },
+	{ VPCTRL, 0x00000021 },
+	{ HTIM1, 0x00F80006 },
+	{ VTIM1, 0x00060006 },
+	{ LVCFG, 0x00000103 },
+#else
 	/* configure D2L on-chip PLL */
 	{ LVPHY1, 0x00000000 },
 	/* set frequency range allowed and clock/data lanes */
 	{ LVPHY0, 0x00044006 },
 
 	/* configure D2L chip LCD Controller configuration registers */
-	{ VPCTRL, 0x00F00110 },
+	{ LVMX0003, 0x03020100 },
+	{ LVMX0407, 0x08050704 },
+	{ LVMX0811, 0x0F0E0A09 },
+	{ LVMX1215, 0x100D0C0B },
+	{ LVMX1619, 0x12111716 },
+	{ LVMX2023, 0x1B151413 },
+	{ LVMX2427, 0x061A1918 },
+	{ VPCTRL, 0x00000120 },
 	{ HTIM1, ((TC358765_HBP << 16) | TC358765_HSW)},
 	{ HTIM2, ((TC358765_HFP << 16) | TC358765_WIDTH)},
 	{ VTIM1, ((TC358765_VBP << 16) | TC358765_VSW)},
 	{ VTIM2, ((TC358765_VFP << 16) | TC358765_HEIGHT)},
 	{ LVCFG, 0x00000001 },
+#endif
 
 	/* Issue a soft reset to LCD Controller for a clean start */
 	{ SYSRST, 0x00000004 },
@@ -267,8 +328,6 @@ static struct
 
 static int tc358765_write_init_config(struct omap_dss_device *dssdev)
 {
-	struct tc358765_data *d2d = dev_get_drvdata(&dssdev->dev);
-	struct tc358765_board_data *board_data = get_board_data(dssdev);
 	int i;
 	int r;
 
@@ -283,21 +342,19 @@ static int tc358765_write_init_config(struct omap_dss_device *dssdev)
 			return r;
 		}
 
-		/* send the first commands without bta */
-		if (i < 3)
-			continue;
+#if defined (CONFIG_PANEL_SAMSUNG_LTL089CL01)
+		if(reg == LVPHY0)
+			mdelay(1);
+#endif
 
-		r = dsi_vc_send_bta_sync(dssdev, d2d->channel1);
-		if (r) {
-			dev_err(&dssdev->dev,
-					"failed to write initial config (BTA) %d\n", i);
-			return r;
-		}
 	}
+
+#if !defined (CONFIG_PANEL_SAMSUNG_LTL089CL01)
 	tc358765_write_register(dssdev, HTIM2,
 		(TC358765_HFP << 16) | board_data->x_res);
 	tc358765_write_register(dssdev, VTIM2,
 		(TC358765_VFP << 16) | board_data->y_res);
+#endif
 
 	return 0;
 }
@@ -323,6 +380,13 @@ static int tc358765_power_on(struct omap_dss_device *dssdev)
 
 	omapdss_dsi_vc_enable_hs(dssdev, d2d->channel0, true);
 
+	/* enable lcd */
+	r = tc358765_lcd_enable(dssdev);
+	if(r) {
+		dev_err(&dssdev->dev, "failed to enable LCD\n");
+		goto err_write_init;
+	}
+
 	/* reset tc358765 bridge */
 	tc358765_hw_reset(dssdev);
 
@@ -337,14 +401,6 @@ static int tc358765_power_on(struct omap_dss_device *dssdev)
 	if (r)
 		goto err_write_init;
 
-	tc358765_read_register(dssdev, PPI_TX_RX_TA);
-
-	dsi_vc_send_bta_sync(dssdev, d2d->channel1);
-	dsi_vc_send_bta_sync(dssdev, d2d->channel1);
-	dsi_vc_send_bta_sync(dssdev, d2d->channel1);
-
-	tc358765_read_register(dssdev, PPI_TX_RX_TA);
-
 	omapdss_dsi_vc_enable_hs(dssdev, d2d->channel1, true);
 
 	/* 0x0e - 16bit
@@ -352,7 +408,11 @@ static int tc358765_power_on(struct omap_dss_device *dssdev)
 	 * 0x2e - unpacked 18bit
 	 * 0x3e - 24bit
 	 */
+#if defined (CONFIG_PANEL_SAMSUNG_LTL089CL01)
+	dsi_video_mode_enable(dssdev, 0x1e);
+#else
 	dsi_video_mode_enable(dssdev, 0x3e);
+#endif
 
 	dev_dbg(&dssdev->dev, "power_on done\n");
 
@@ -369,12 +429,19 @@ err_disp_enable:
 
 static void tc358765_power_off(struct omap_dss_device *dssdev)
 {
+	int r;
 	dsi_video_mode_disable(dssdev);
 
 	omapdss_dsi_display_disable(dssdev, false, false);
 
 	if (dssdev->platform_disable)
 		dssdev->platform_disable(dssdev);
+
+	/* disable lcd */
+	r = tc358765_lcd_disable(dssdev);
+	if(r) {
+		dev_err(&dssdev->dev, "failed to disable LCD\n");
+	}
 }
 
 static void tc358765_disable(struct omap_dss_device *dssdev)
@@ -456,7 +523,14 @@ static struct omap_dss_driver tc358765_driver = {
 
 static int __init tc358765_init(void)
 {
-	omap_dss_register_driver(&tc358765_driver);
+	int r;
+
+	r = omap_dss_register_driver(&tc358765_driver);
+	if (r < 0) {
+		printk("tc358765 driver registration failed\n");
+		return r;
+	}
+
 	return 0;
 }
 

@@ -47,8 +47,9 @@ static __initdata struct twl6030_resource_map twl6030_res_map[] = {
 	{.res_id = RES_V2V1,.name = "V2V1",.base_addr = 0x4c,.group = DEV_GRP_P1,},
 	{.res_id = RES_VDD1,.name = "CORE1",.base_addr = 0x52,.group = DEV_GRP_P1,},
 	{.res_id = RES_VDD2,.name = "CORE2",.base_addr = 0x58,.group = DEV_GRP_P1,},
-	{.res_id = RES_VDD3,.name = "CORE3",.base_addr = 0x5e,.group = DEV_GRP_P1,},
-	{.res_id = RES_VMEM,.name = "VMEM",.base_addr = 0x64,.group = DEV_GRP_P1,},
+//	{.res_id = RES_VDD3,.name = "CORE3",.base_addr = 0x5e,.group = DEV_GRP_P1,},
+//	{.res_id = RES_VMEM,.name = "VMEM",.base_addr = 0x64,.group = DEV_GRP_P1,},
+	{.res_id = RES_VMEM,.name = "VMEM",.base_addr = 0x64,.group = DEV_GRP_NULL,},
 	/* VANA cannot be modified */
 	{.res_id = RES_VUAX1,.name = "VUAX1",.base_addr = 0x84,.group = DEV_GRP_P1,},
 	{.res_id = RES_VAUX2,.name = "VAUX2",.base_addr = 0x88,.group = DEV_GRP_P1,},
@@ -62,7 +63,7 @@ static __initdata struct twl6030_resource_map twl6030_res_map[] = {
 	{.res_id = RES_VSIM,.name = "VSIM",.base_addr = 0xa4,.group = DEV_GRP_P1,},
 	{.res_id = RES_REGEN,.name = "REGEN1",.base_addr = 0xad,.group = DEV_GRP_P1,},
 	{.res_id = RES_REGEN2,.name = "REGEN2",.base_addr = 0xb0,.group = DEV_GRP_P1,},
-	{.res_id = RES_SYSEN,.name = "SYSEN",.base_addr = 0xb3,.group = DEV_GRP_P1,},
+//	{.res_id = RES_SYSEN,.name = "SYSEN",.base_addr = 0xb3,.group = DEV_GRP_P1,},
 	/* NRES_PWRON cannot be modified */
 	/* 32KCLKAO cannot be modified */
 	{.res_id = RES_32KCLKG,.name = "32KCLKG",.base_addr = 0xbc,.group = DEV_GRP_P1,},

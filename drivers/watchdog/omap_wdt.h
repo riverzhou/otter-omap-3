@@ -55,4 +55,8 @@
 #define PTV			0	/* prescale */
 #define GET_WLDR_VAL(secs)	(0xffffffff - ((secs) * (32768/(1<<PTV))) + 1)
 
+#define TIME_BEFORE_REBOOT      10      /* if delay interrupt occurs and if the watchdog is pet by userspace
+                                         * then wait 10s before rebooting the system.
+                                         */
+
 #endif				/* _OMAP_WATCHDOG_H */

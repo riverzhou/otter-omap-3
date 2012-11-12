@@ -44,6 +44,8 @@
 #include <asm/system.h>
 #include <asm/uaccess.h>
 
+#include <linux/metricslog.h>
+
 #include "queue.h"
 
 MODULE_ALIAS("mmc:block");
@@ -247,6 +249,9 @@ static struct mmc_blk_ioc_data *mmc_blk_ioctl_copy_from_user(
 		goto idata_err;
 	}
 
+	if (!idata->buf_bytes)
+		return idata;
+
 	idata->buf = kzalloc(idata->buf_bytes, GFP_KERNEL);
 	if (!idata->buf) {
 		err = -ENOMEM;
@@ -293,25 +298,6 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 	if (IS_ERR(idata))
 		return PTR_ERR(idata);
 
-	cmd.opcode = idata->ic.opcode;
-	cmd.arg = idata->ic.arg;
-	cmd.flags = idata->ic.flags;
-
-	data.sg = &sg;
-	data.sg_len = 1;
-	data.blksz = idata->ic.blksz;
-	data.blocks = idata->ic.blocks;
-
-	sg_init_one(data.sg, idata->buf, idata->buf_bytes);
-
-	if (idata->ic.write_flag)
-		data.flags = MMC_DATA_WRITE;
-	else
-		data.flags = MMC_DATA_READ;
-
-	mrq.cmd = &cmd;
-	mrq.data = &data;
-
 	md = mmc_blk_get(bdev->bd_disk);
 	if (!md) {
 		err = -EINVAL;
@@ -324,30 +310,53 @@ static int mmc_blk_ioctl_cmd(struct block_device *bdev,
 		goto cmd_done;
 	}
 
+	cmd.opcode = idata->ic.opcode;
+	cmd.arg = idata->ic.arg;
+	cmd.flags = idata->ic.flags;
+	
+	if (idata->buf_bytes) {
+		data.sg = &sg;
+		data.sg_len = 1;
+		data.blksz = idata->ic.blksz;
+		data.blocks = idata->ic.blocks;
+		
+		sg_init_one(data.sg, idata->buf, idata->buf_bytes);
+
+		if (idata->ic.write_flag)
+			data.flags = MMC_DATA_WRITE;
+		else
+			data.flags = MMC_DATA_READ;
+		/* data.flags must already be set before doing this. */
+		mmc_set_data_timeout(&data, card);
+		
+		/* Allow overriding the timeout_ns for empirical tuning. */
+		if (idata->ic.data_timeout_ns)
+			data.timeout_ns = idata->ic.data_timeout_ns;
+		
+		if ((cmd.flags & MMC_RSP_R1B) == MMC_RSP_R1B) {
+			/*
+			 * Pretend this is a data transfer and rely on the
+			 * host driver to compute timeout.  When all host
+			 * drivers support cmd.cmd_timeout for R1B, this
+			 * can be changed to:
+			 *
+			 *     mrq.data = NULL;
+			 *     cmd.cmd_timeout = idata->ic.cmd_timeout_ms;
+			 */
+			data.timeout_ns = idata->ic.cmd_timeout_ms * 1000000;
+		}
+		
+		mrq.data = &data;
+	}
+
+	mrq.cmd = &cmd;
+
 	mmc_claim_host(card->host);
 
 	if (idata->ic.is_acmd) {
 		err = mmc_app_cmd(card->host, card);
 		if (err)
 			goto cmd_rel_host;
-	}
-
-	/* data.flags must already be set before doing this. */
-	mmc_set_data_timeout(&data, card);
-	/* Allow overriding the timeout_ns for empirical tuning. */
-	if (idata->ic.data_timeout_ns)
-		data.timeout_ns = idata->ic.data_timeout_ns;
-
-	if ((cmd.flags & MMC_RSP_R1B) == MMC_RSP_R1B) {
-		/*
-		 * Pretend this is a data transfer and rely on the host driver
-		 * to compute timeout.  When all host drivers support
-		 * cmd.cmd_timeout for R1B, this can be changed to:
-		 *
-		 *     mrq.data = NULL;
-		 *     cmd.cmd_timeout = idata->ic.cmd_timeout_ms;
-		 */
-		data.timeout_ns = idata->ic.cmd_timeout_ms * 1000000;
 	}
 
 	mmc_wait_for_req(card->host, &mrq);
@@ -562,6 +571,8 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		pr_err("%s: %s sending %s command, card status %#x\n",
 			req->rq_disk->disk_name, "response CRC error",
 			name, status);
+
+		log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:response_CRC_err=1:");
 		return ERR_RETRY;
 
 	case -ETIMEDOUT:
@@ -571,6 +582,9 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		/* If the status cmd initially failed, retry the r/w cmd */
 		if (!status_valid) {
 			pr_err("%s: status not valid, retrying timeout\n", req->rq_disk->disk_name);
+
+			log_to_metrics(ANDROID_LOG_INFO, "emmc",
+				"cmd_blk:def:status_not_valid=1:");
 			return ERR_RETRY;
 		}
 		/*
@@ -580,17 +594,23 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 		 */
 		if (status & (R1_COM_CRC_ERROR | R1_ILLEGAL_COMMAND)) {
 			pr_err("%s: command error, retrying timeout\n", req->rq_disk->disk_name);
+
+			log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:command_err=1:");
 			return ERR_RETRY;
 		}
 
-		/* Otherwise abort the command */
-		pr_err("%s: not retrying timeout\n", req->rq_disk->disk_name);
-		return ERR_ABORT;
+		/* TTX-4176: Retry the command */
+		pr_err("%s: retrying due to timeout\n",
+				req->rq_disk->disk_name);
+		log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:timeout_err=1:");
+		return ERR_RETRY;
 
 	default:
 		/* We don't understand the error code the driver gave us */
 		pr_err("%s: unknown error %d sending read/write command, card status %#x\n",
 		       req->rq_disk->disk_name, error, status);
+
+		log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:unknown_err=1:");
 		return ERR_ABORT;
 	}
 }
@@ -616,6 +636,11 @@ static int mmc_blk_cmd_error(struct request *req, const char *name, int error,
 static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 	struct mmc_blk_request *brq)
 {
+	char err_msg[64];
+	snprintf(err_msg, sizeof(err_msg),
+		"cmd_blk:def:err_received=1,manfid=%x:", card->cid.manfid);
+	log_to_metrics(ANDROID_LOG_INFO, "emmc", err_msg);
+
 	bool prev_cmd_status_valid = true;
 	u32 status, stop_status = 0;
 	int err, retry;
@@ -636,8 +661,10 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 	}
 
 	/* We couldn't get a response from the card.  Give up. */
-	if (err)
+	if (err) {
+		log_to_metrics(ANDROID_LOG_INFO, "emmc", "cmd_blk:def:no_response_err=1:");
 		return ERR_ABORT;
+	}
 
 	/*
 	 * Check the current card state.  If it is in some data transfer
@@ -646,16 +673,26 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 	if (R1_CURRENT_STATE(status) == R1_STATE_DATA ||
 	    R1_CURRENT_STATE(status) == R1_STATE_RCV) {
 		err = send_stop(card, &stop_status);
-		if (err)
+		if (err) {
 			pr_err("%s: error %d sending stop command\n",
 			       req->rq_disk->disk_name, err);
-
-		/*
-		 * If the stop cmd also timed out, the card is probably
-		 * not present, so abort.  Other errors are bad news too.
-		 */
-		if (err)
+			log_to_metrics(ANDROID_LOG_INFO, "emmc",
+				"cmd_blk:def:send_stop_cmd_err=1:");
+			/* stop command could have failed because, card was
+			 * already in tran state */
+			err = get_card_status(card, &status, 0);
+			if (err) {
+				pr_err("%s: error %d sending card status after"
+					       " stop command\n",
+					       req->rq_disk->disk_name, err);
+				return ERR_ABORT;
+			}
+			if (R1_CURRENT_STATE(status) ==  R1_STATE_TRAN
+				|| R1_CURRENT_STATE(status) == R1_STATE_PRG) {
+				return ERR_RETRY;
+			}
 			return ERR_ABORT;
+		}
 	}
 
 	/* Check for set block count errors */
@@ -680,6 +717,17 @@ static int mmc_blk_cmd_recovery(struct mmc_card *card, struct request *req,
 	if (stop_status) {
 		brq->stop.resp[0] = stop_status;
 		brq->stop.error = 0;
+	}
+
+	err = get_card_status(card, &status, 0);
+	if (err) {
+		pr_err("%s: error %d sending card status for retry\n",
+		       req->rq_disk->disk_name, err);
+		return ERR_ABORT;
+	}
+	if (R1_CURRENT_STATE(status) ==  R1_STATE_TRAN
+		|| R1_CURRENT_STATE(status) == R1_STATE_PRG) {
+		return ERR_RETRY;
 	}
 	return ERR_CONTINUE;
 }
@@ -966,8 +1014,34 @@ static int mmc_blk_issue_rw_rq(struct mmc_queue *mq, struct request *req)
 		if (brq.sbc.error || brq.cmd.error || brq.stop.error) {
 			switch (mmc_blk_cmd_recovery(card, req, &brq)) {
 			case ERR_RETRY:
-				if (retry++ < 5)
+				if (retry++ < 5) {
+					/*
+					 * Everything else is either success, or a data error of some
+					 * kind.  If it was a write, we may have transitioned to
+					 * program mode, which we have to wait for it to complete.
+					 */
+					if (!mmc_host_is_spi(card->host) && rq_data_dir(req) != READ) {
+						u32 status;
+						do {
+							int err = get_card_status(card, &status, 5);
+							if (err) {
+								printk(KERN_ERR "%s: error %d requesting status\n",
+									   req->rq_disk->disk_name, err);
+								goto cmd_err;
+							}
+							/*
+							 * Some cards mishandle the status bits,
+							 * so make sure to check both the busy
+							 * indication and the card state.
+							 */
+						} while (!(status & R1_READY_FOR_DATA) ||
+							 (R1_CURRENT_STATE(status) == R1_STATE_PRG));
+					}
 					continue;
+				}
+				pr_err("%s: retry count = %d\n", req->rq_disk->disk_name, retry);
+				if (retry < 8)
+					break;
 			case ERR_ABORT:
 				goto cmd_abort;
 			case ERR_CONTINUE:
@@ -1551,4 +1625,5 @@ module_exit(mmc_blk_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Multimedia Card (MMC) block device driver");
+
 

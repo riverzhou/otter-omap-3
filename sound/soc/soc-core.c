@@ -44,6 +44,7 @@
 #include <trace/events/asoc.h>
 
 #define NAME_SIZE	32
+#define DEBUG
 
 static DECLARE_WAIT_QUEUE_HEAD(soc_pm_waitq);
 
@@ -1409,6 +1410,12 @@ static void soc_resume_deferred(struct work_struct *work)
 
 	if (card->resume_post)
 		card->resume_post(card);
+	
+	list_for_each_entry(codec, &card->codec_dev_list, card_list) {
+		mutex_lock(&codec->mutex);
+		snd_soc_dapm_sync(&codec->dapm);
+		mutex_unlock(&codec->mutex);
+	}
 
 	dev_dbg(card->dev, "resume work completed\n");
 

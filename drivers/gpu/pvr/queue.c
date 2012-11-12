@@ -24,6 +24,8 @@
  *
  ******************************************************************************/
 
+#include <linux/trapz.h>
+
 #include "services_headers.h"
 
 #include "lists.h"
@@ -869,6 +871,8 @@ PVRSRV_ERROR PVRSRVProcessCommand(SYS_DATA			*psSysData,
 
 
 
+	TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_PVR, PVRProcessCommand, "PVRSRVProcessCommand: command started");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_PVR, PVRProcessCommand, "CmdCookie %d CommandType %d", psCmdCompleteData, psCommand->CommandType);
 
 
 
@@ -992,6 +996,9 @@ IMG_VOID PVRSRVCommandCompleteKM(IMG_HANDLE	hCmdCookie,
 	IMG_UINT32				i;
 	COMMAND_COMPLETE_DATA	*psCmdCompleteData = (COMMAND_COMPLETE_DATA *)hCmdCookie;
 	SYS_DATA				*psSysData;
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_PVR, PVRCommandCompleteKM, "PVRSRVCommandCompleteKM: Flip command complete");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_PVR, PVRCommandCompleteKM, "CmdCookie %d scheduleMISR %d", hCmdCookie, bScheduleMISR);
 
 	SysAcquireData(&psSysData);
 

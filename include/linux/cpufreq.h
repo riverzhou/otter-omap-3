@@ -175,6 +175,12 @@ struct cpufreq_governor {
 					 char *buf);
 	int	(*store_setspeed)	(struct cpufreq_policy *policy,
 					 unsigned int freq);
+	int	(*show_video_hint)	(char *buf);
+	void	(*store_video_hint)	(struct cpufreq_policy *policy,
+					unsigned int hint);
+	int	(*show_panel_hint)	(char *buf);
+	void	(*store_panel_hint)	(struct cpufreq_policy *policy,
+					unsigned int hint);
 	unsigned int max_transition_latency; /* HW must be able to switch to
 			next freq faster than this value in nano secs or we
 			will fallback to performance governor */
@@ -310,6 +316,8 @@ __ATTR(_name, 0644, show_##_name, store_##_name)
  *********************************************************************/
 int cpufreq_get_policy(struct cpufreq_policy *policy, unsigned int cpu);
 int cpufreq_update_policy(unsigned int cpu);
+void send_video_hint(int hint);
+void send_panel_hint(int hint);
 
 #ifdef CONFIG_CPU_FREQ
 /* query the current CPU frequency (in kHz). If zero, cpufreq couldn't detect it */
@@ -364,6 +372,9 @@ extern struct cpufreq_governor cpufreq_gov_interactive;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_HOTPLUG)
 extern struct cpufreq_governor cpufreq_gov_hotplug;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_hotplug)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_PERFACTIVE)
+extern struct cpufreq_governor cpufreq_gov_perfactive;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_perfactive)
 #endif
 
 

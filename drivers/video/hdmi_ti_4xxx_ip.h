@@ -49,6 +49,7 @@ struct hdmi_reg { u16 idx; };
 #define HDMI_WP_AUDIO_DATA			HDMI_WP_REG(0x8C)
 #define HDMI_WP_IRQSTATUS_CORE			0x1
 #define HDMI_WP_IRQENABLE_CORE			0x1
+#define HDMI_WP_AUDIO_FIFO_UNDERFLOW		(0x1 << 8)
 
 /* HDMI IP Core System */
 #define HDMI_CORE_SYS_REG(idx)			HDMI_REG(idx)
@@ -267,6 +268,11 @@ enum hdmi_packing_mode {
 	HDMI_PACK_ALREADYPACKED = 7
 };
 
+enum hdmi_timing_mode {
+	HDMI_TIMING_MASTER_24BIT = 1,
+	HDMI_TIMING_MASTER_30BIT = 2,
+	HDMI_TIMING_MASTER_36BIT = 3
+};
 
 struct hdmi_core_video_config {
 	enum hdmi_core_inputbus_width	ip_bus_width;
@@ -339,7 +345,7 @@ struct hdmi_video_interface {
 	int	vsp;	/* Vsync polarity */
 	int	hsp;	/* Hsync polarity */
 	int	interlacing;
-	int	tm;	/* Timing mode */
+	enum hdmi_timing_mode	tm;	/* Timing mode */
 };
 
 #endif

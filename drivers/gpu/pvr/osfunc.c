@@ -61,6 +61,7 @@
 	defined(PVR_LINUX_USING_WORKQUEUES)
 #include <linux/workqueue.h>
 #endif
+#include <linux/trapz.h>
 
 #include "img_types.h"
 #include "services_headers.h"
@@ -73,6 +74,7 @@
 #include "event.h"
 #include "linkage.h"
 #include "pvr_uaccess.h"
+#include "lock.h"
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27))
 #define ON_EACH_CPU(func, info, wait) on_each_cpu(func, info, wait)
@@ -3057,11 +3059,14 @@ static void per_cpu_cache_flush(void *arg)
 
 IMG_VOID OSCleanCPUCacheKM(IMG_VOID)
 {
-	
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_PVR, PVROSCleanCPUCacheKM, "OSCleanCPUCacheKM: Cache flushing using begin/end semantic - expect to see results in the order of ~1ms");
+        TRAPZ_LOG_BEGIN(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_PVR, PVROSCleanCPUCacheKM);
+
 	ON_EACH_CPU(per_cpu_cache_flush, NULL, 1);
 #if defined(CONFIG_OUTER_CACHE) && !defined(PVR_NO_FULL_CACHE_OPS)
 	outer_clean_range(0, ULONG_MAX);
 #endif
+        TRAPZ_LOG_END(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_PVR, PVROSCleanCPUCacheKM);
 }
 
 IMG_VOID OSFlushCPUCacheKM(IMG_VOID)
@@ -3172,6 +3177,65 @@ IMG_BOOL OSInvalidateCPUCacheRangeKM(IMG_HANDLE hOSMemHandle,
 #endif 
 
 #endif 
+
+ typedef struct _AtomicStruct
+ {
+        atomic_t RefCount;
+ } AtomicStruct;
+ 
+ PVRSRV_ERROR OSAtomicAlloc(IMG_PVOID *ppvRefCount)
+ {
+        AtomicStruct *psRefCount;
+ 
+        psRefCount = kmalloc(sizeof(AtomicStruct), GFP_KERNEL);
+        if (psRefCount == NULL)
+        {
+                return PVRSRV_ERROR_OUT_OF_MEMORY;
+        }
+        atomic_set(&psRefCount->RefCount, 0);
+ 
+        *ppvRefCount = psRefCount;
+        return PVRSRV_OK;
+ }
+ 
+ IMG_VOID OSAtomicFree(IMG_PVOID pvRefCount) 
+ {
+        AtomicStruct *psRefCount = pvRefCount;
+ 
+        PVR_ASSERT(atomic_read(&psRefCount->RefCount) == 0);
+        kfree(psRefCount);
+ }
+ 
+ IMG_VOID OSAtomicInc(IMG_PVOID pvRefCount)
+ {
+        AtomicStruct *psRefCount = pvRefCount;
+ 
+        atomic_inc(&psRefCount->RefCount);
+ }
+ 
+ IMG_BOOL OSAtomicDecAndTest(IMG_PVOID pvRefCount)
+ {
+        AtomicStruct *psRefCount = pvRefCount;
+ 
+        return atomic_dec_and_test(&psRefCount->RefCount) ? IMG_TRUE:IMG_FALSE;
+ }
+ 
+ IMG_UINT32 OSAtomicRead(IMG_PVOID pvRefCount)
+ {
+        AtomicStruct *psRefCount = pvRefCount;
+ 
+        return (IMG_UINT32) atomic_read(&psRefCount->RefCount);
+ }
+
+IMG_VOID OSReleaseBridgeLock(IMG_VOID)
+{
+       LinuxUnLockMutex(&gPVRSRVLock);
+}
+
+IMG_VOID OSReacquireBridgeLock(IMG_VOID)
+{
+       LinuxLockMutex(&gPVRSRVLock);
+}
 
 PVRSRV_ERROR PVROSFuncInit(IMG_VOID)
 {

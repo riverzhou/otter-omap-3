@@ -31,6 +31,7 @@
 #include <linux/omapfb.h>
 
 #include "hdmi_ti_4xxx_ip.h"
+#include "hdmi_ti_4xxx_ip_ddc.h"
 
 static inline void hdmi_write_reg(void __iomem *base_addr,
 				const struct hdmi_reg idx, u32 val)
@@ -124,9 +125,9 @@ static int hdmi_pll_init(struct hdmi_ip_data *ip_data,
 	/* go now */
 	REG_FLD_MOD(hdmi_pll_base(ip_data), PLLCTRL_PLL_GO, 0x1, 0, 0);
 
-	/* wait for bit change */
+	/* wait for PLL opertation to be over */
 	if (hdmi_wait_for_bit_change(hdmi_pll_base(ip_data), PLLCTRL_PLL_GO,
-							0, 0, 1) != 1) {
+							0, 0, 0)) {
 		pr_err("PLL GO bit not set\n");
 		return -ETIMEDOUT;
 	}
@@ -166,10 +167,14 @@ static int hdmi_wait_for_audio_stop(struct hdmi_ip_data *ip_data)
 
 /* PHY_PWR_CMD */
 static int hdmi_set_phy_pwr(struct hdmi_ip_data *ip_data,
-				enum hdmi_phy_pwr val, bool set_mode)
+				enum hdmi_phy_pwr val,
+				enum hdmi_pwrchg_reasons reason)
 {
 	/* FIXME audio driver should have already stopped, but not yet */
-	if (val == HDMI_PHYPWRCMD_OFF && !set_mode)
+	bool wait_for_audio_stop = !(reason &
+		(HDMI_PWRCHG_MODE_CHANGE | HDMI_PWRCHG_RESYNC));
+
+	if (val == HDMI_PHYPWRCMD_OFF && wait_for_audio_stop)
 		hdmi_wait_for_audio_stop(ip_data);
 
 	/* Command for power control of HDMI PHY */
@@ -248,11 +253,12 @@ int hdmi_ti_4xxx_phy_init(struct hdmi_ip_data *ip_data)
 {
 	u16 r = 0;
 
-	r = hdmi_set_phy_pwr(ip_data, HDMI_PHYPWRCMD_LDOON, false);
+	r = hdmi_set_phy_pwr(ip_data, HDMI_PHYPWRCMD_LDOON,
+			HDMI_PWRCHG_DEFAULT);
 	if (r)
 		return r;
 
-	r = hdmi_set_phy_pwr(ip_data, HDMI_PHYPWRCMD_TXON, false);
+	r = hdmi_set_phy_pwr(ip_data, HDMI_PHYPWRCMD_TXON, HDMI_PWRCHG_DEFAULT);
 	if (r)
 		return r;
 
@@ -279,9 +285,10 @@ int hdmi_ti_4xxx_phy_init(struct hdmi_ip_data *ip_data)
 	return 0;
 }
 
-void hdmi_ti_4xxx_phy_off(struct hdmi_ip_data *ip_data, bool set_mode)
+void hdmi_ti_4xxx_phy_off(struct hdmi_ip_data *ip_data,
+			enum hdmi_pwrchg_reasons reason)
 {
-	hdmi_set_phy_pwr(ip_data, HDMI_PHYPWRCMD_OFF, set_mode);
+	hdmi_set_phy_pwr(ip_data, HDMI_PHYPWRCMD_OFF, reason);
 }
 EXPORT_SYMBOL(hdmi_ti_4xxx_phy_init);
 EXPORT_SYMBOL(hdmi_ti_4xxx_phy_off);
@@ -293,6 +300,7 @@ static int hdmi_core_ddc_edid(struct hdmi_ip_data *ip_data,
 	char checksum = 0;
 	u32 offset = 0;
 
+#ifdef USE_LOCAL_DDC_READ
 	/* Turn on CLK for DDC */
 	REG_FLD_MOD(hdmi_av_base(ip_data), HDMI_CORE_AV_DPD, 0x7, 2, 0);
 
@@ -385,6 +393,35 @@ static int hdmi_core_ddc_edid(struct hdmi_ip_data *ip_data,
 			j++;
 		}
 	}
+#else
+	/*
+	 * SW HACK : Without the Delay DDC(i2c bus) reads 0 values /
+	 * right shifted values( The behavior is not consistent and seen only
+	 * with some TV's)
+	 */
+	//msleep(300);
+
+	if (ext % 2 != 0)
+		 offset = 0x80;
+	{
+		struct mddc mddc;
+		i = ext * 128;
+
+		mddc.slaveAddr  = 0xA0;
+		mddc.offset     = ext/2;
+		mddc.regAddr    = offset;
+		mddc.nbytes_lsb = 0x80;
+		mddc.nbytes_msb = 0x0;
+		mddc.dummy      = 0;
+		mddc.pdata      = &pedid[i];
+		if (ext)
+			mddc.cmd = MASTER_CMD_ENH_RD;
+		else
+			mddc.cmd = MASTER_CMD_SEQ_RD;
+
+		ddc_start_transfer(&mddc, DDC_READ);
+	}
+#endif
 
 	for (j = 0; j < 128; j++)
 		checksum += pedid[j];
@@ -430,7 +467,9 @@ EXPORT_SYMBOL(read_ti_4xxx_edid);
 static void hdmi_core_init(enum hdmi_deep_color_mode deep_color,
 			struct hdmi_core_video_config *video_cfg,
 			struct hdmi_core_infoframe_avi *avi_cfg,
-			struct hdmi_core_packet_enable_repeat *repeat_cfg)
+			struct hdmi_core_packet_enable_repeat *repeat_cfg,
+			struct hdmi_video_format *video_fmt,
+			struct hdmi_video_interface *video_int)
 {
 	pr_debug("Enter hdmi_core_init\n");
 
@@ -441,19 +480,25 @@ static void hdmi_core_init(enum hdmi_deep_color_mode deep_color,
 		video_cfg->op_dither_truc = HDMI_OUTPUTTRUNCATION_10BIT;
 		video_cfg->deep_color_pkt = HDMI_DEEPCOLORPACKECTENABLE;
 		video_cfg->pkt_mode = HDMI_PACKETMODE30BITPERPIXEL;
+		video_fmt->packing_mode = HDMI_PACK_10b_RGB_YUV444;
+		video_int->tm = HDMI_TIMING_MASTER_30BIT;
 		break;
 	case HDMI_DEEP_COLOR_36BIT:
 		video_cfg->ip_bus_width = HDMI_INPUT_12BIT;
 		video_cfg->op_dither_truc = HDMI_OUTPUTTRUNCATION_12BIT;
 		video_cfg->deep_color_pkt = HDMI_DEEPCOLORPACKECTENABLE;
 		video_cfg->pkt_mode = HDMI_PACKETMODE36BITPERPIXEL;
+		video_fmt->packing_mode = HDMI_PACK_ALREADYPACKED;
+		video_int->tm = HDMI_TIMING_MASTER_36BIT;
 		break;
 	case HDMI_DEEP_COLOR_24BIT:
 	default:
 		video_cfg->ip_bus_width = HDMI_INPUT_8BIT;
 		video_cfg->op_dither_truc = HDMI_OUTPUTTRUNCATION_8BIT;
 		video_cfg->deep_color_pkt = HDMI_DEEPCOLORPACKECTDISABLE;
-		video_cfg->pkt_mode = HDMI_PACKETMODERESERVEDVALUE;
+		video_cfg->pkt_mode = HDMI_PACKETMODE24BITPERPIXEL;
+		video_fmt->packing_mode = HDMI_PACK_24b_RGB_YUV444_YUV422;
+		video_int->tm = HDMI_TIMING_MASTER_24BIT;
 		break;
 	}
 
@@ -833,23 +878,20 @@ void hdmi_ti_4xxx_basic_configure(struct hdmi_ip_data *ip_data,
 
 	hdmi_core_init(cfg->deep_color, &v_core_cfg,
 		&avi_cfg,
-		&repeat_cfg);
+		&repeat_cfg, &video_format, &video_interface);
 
-	hdmi_wp_core_interrupt_set(ip_data, HDMI_WP_IRQENABLE_CORE);
+	hdmi_wp_core_interrupt_set(ip_data, HDMI_WP_IRQENABLE_CORE |
+				HDMI_WP_AUDIO_FIFO_UNDERFLOW);
 
 	hdmi_wp_video_init_format(&video_format, &video_timing, cfg);
 
 	hdmi_wp_video_config_timing(ip_data, &video_timing);
-
-	/* video config */
-	video_format.packing_mode = HDMI_PACK_24b_RGB_YUV444_YUV422;
 
 	hdmi_wp_video_config_format(ip_data, &video_format);
 
 	video_interface.vsp = !!(cfg->timings.sync & FB_SYNC_VERT_HIGH_ACT);
 	video_interface.hsp = !!(cfg->timings.sync & FB_SYNC_HOR_HIGH_ACT);
 	video_interface.interlacing = cfg->timings.vmode & FB_VMODE_INTERLACED;
-	video_interface.tm = 1 ; /* HDMI_TIMING_MASTER_24BIT */
 
 	hdmi_wp_video_config_interface(ip_data, &video_interface);
 
@@ -862,7 +904,6 @@ void hdmi_ti_4xxx_basic_configure(struct hdmi_ip_data *ip_data,
 	/* power down off */
 	hdmi_core_powerdown_disable(ip_data);
 
-	v_core_cfg.pkt_mode = HDMI_PACKETMODE24BITPERPIXEL;
 	v_core_cfg.hdmi_dvi = cfg->cm.mode;
 
 	hdmi_core_video_config(ip_data, &v_core_cfg);
@@ -940,6 +981,9 @@ u32 hdmi_ti_4xxx_irq_handler(struct hdmi_ip_data *ip_data)
 			hdmi_read_reg(core_base, HDMI_CORE_SYS_INTR3);
 		}
 	}
+
+	if (val & HDMI_WP_AUDIO_FIFO_UNDERFLOW)
+		pr_err("HDMI_WP_AUDIO_FIFO_UNDERFLOW\n");
 
 	pr_debug("HDMI_WP_IRQSTATUS = 0x%x\n", val);
 	pr_debug("HDMI_CORE_SYS_INTR_STATE = 0x%x\n", core_state);
@@ -1345,18 +1389,23 @@ void hdmi_ti_4xxx_core_audio_infoframe_config(struct hdmi_ip_data *ip_data,
 }
 EXPORT_SYMBOL(hdmi_ti_4xxx_core_audio_infoframe_config);
 
-
-void hdmi_ti_4xxx_audio_enable(struct hdmi_ip_data *ip_data, bool enable)
+void hdmi_ti_4xxx_audio_transfer_en(struct hdmi_ip_data *ip_data,
+						bool enable)
 {
-
-	REG_FLD_MOD(hdmi_av_base(ip_data),
-			HDMI_CORE_AV_AUD_MODE, enable, 0, 0);
-	REG_FLD_MOD(hdmi_wp_base(ip_data),
-			HDMI_WP_AUDIO_CTRL, enable, 31, 31);
 	REG_FLD_MOD(hdmi_wp_base(ip_data),
 			HDMI_WP_AUDIO_CTRL, enable, 30, 30);
+	REG_FLD_MOD(hdmi_av_base(ip_data),
+			HDMI_CORE_AV_AUD_MODE, enable, 0, 0);
 }
-EXPORT_SYMBOL(hdmi_ti_4xxx_audio_enable);
+EXPORT_SYMBOL(hdmi_ti_4xxx_audio_transfer_en);
+
+
+void hdmi_ti_4xxx_wp_audio_enable(struct hdmi_ip_data *ip_data, bool enable)
+{
+	REG_FLD_MOD(hdmi_wp_base(ip_data),
+			HDMI_WP_AUDIO_CTRL, enable, 31, 31);
+}
+EXPORT_SYMBOL(hdmi_ti_4xxx_wp_audio_enable);
 
 int hdmi_ti_4xx_check_aksv_data(struct hdmi_ip_data *ip_data)
 {

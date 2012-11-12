@@ -44,6 +44,9 @@
 
 #include <asm/mman.h>
 
+#include <linux/trapz.h>
+#undef TRAPZ_ENABLE_FILEMAP
+
 /*
  * Shared mappings implemented 30.11.1994. It's not fully working yet,
  * though.
@@ -1399,7 +1402,15 @@ generic_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 	retval = generic_segment_checks(iov, &nr_segs, &count, VERIFY_WRITE);
 	if (retval)
 		return retval;
+#ifdef TRAPZ_ENABLE_FILEMAP
+	TRAPZ_DESCRIBE(TRAPZ_KERN_FS_FIO, FIORead, "Generic File I/O Read - ex1=size - ex2=1/0 begin/end");
+	TRAPZ_DESCRIBE(TRAPZ_KERN_FS_FIO, FIOReadNode, "File dev:no of read-in-progress");
 
+	TRAPZ_LOG(TRAPZ_LOG_INFO, 0, TRAPZ_KERN_FS_FIO, FIORead, iov_length(iov, nr_segs), 1);
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_INFO, 0, TRAPZ_KERN_FS_FIO, FIOReadNode, "Read file Dev:Ino %d - %d",
+		filp->f_dentry->d_inode->i_rdev,
+		filp->f_dentry->d_inode->i_ino);
+#endif
 	blk_start_plug(&plug);
 
 	/* coalesce the iovecs and go direct-to-BIO for O_DIRECT */
@@ -1475,6 +1486,10 @@ generic_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 	}
 out:
 	blk_finish_plug(&plug);
+
+#ifdef TRAPZ_ENABLE_FILEMAP
+	TRAPZ_LOG(TRAPZ_LOG_INFO, 0, TRAPZ_KERN_FS_FIO, FIORead, iov_length(iov, nr_segs), 0);
+#endif
 	return retval;
 }
 EXPORT_SYMBOL(generic_file_aio_read);
@@ -2604,6 +2619,16 @@ ssize_t generic_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	BUG_ON(iocb->ki_pos != pos);
 
 	mutex_lock(&inode->i_mutex);
+
+#ifdef TRAPZ_ENABLE_FILEMAP
+	TRAPZ_DESCRIBE(TRAPZ_KERN_FS_FIO, FIOWrite, "Generic File I/O Write - ex1=size - ex2=1/0 begin/end");
+	TRAPZ_DESCRIBE(TRAPZ_KERN_FS_FIO, FIOWriteNode, "File dev:no of write-in-progress");
+
+	TRAPZ_LOG(TRAPZ_LOG_INFO, 0, TRAPZ_KERN_FS_FIO, FIOWrite, iov_length(iov, nr_segs), 1);
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_INFO, 0, TRAPZ_KERN_FS_FIO, FIOWriteNode, "Write file Dev:Ino %d:%d",
+		file->f_dentry->d_inode->i_rdev,
+		file->f_dentry->d_inode->i_ino);
+#endif
 	blk_start_plug(&plug);
 	ret = __generic_file_aio_write(iocb, iov, nr_segs, &iocb->ki_pos);
 	mutex_unlock(&inode->i_mutex);
@@ -2616,6 +2641,10 @@ ssize_t generic_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 			ret = err;
 	}
 	blk_finish_plug(&plug);
+
+#ifdef TRAPZ_ENABLE_FILEMAP
+	TRAPZ_LOG(TRAPZ_LOG_INFO, 0, TRAPZ_KERN_FS_FIO, FIOWrite, iov_length(iov, nr_segs), 0);
+#endif
 	return ret;
 }
 EXPORT_SYMBOL(generic_file_aio_write);

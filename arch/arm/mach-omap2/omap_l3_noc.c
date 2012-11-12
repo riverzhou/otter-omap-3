@@ -131,7 +131,7 @@ static irqreturn_t l3_interrupt_handler(int irq, void *_l3)
 				l3_targ_stderrlog_main_name[i][err_src];
 				regoffset = targ_reg_offset[i][err_src];
 
-				WARN(true, "CUSTOM SRESP error with SOURCE:%s\n",
+				WARN_ONCE(true, "CUSTOM SRESP error with SOURCE:%s\n",
 							source_name);
 
 				masterid = readl(base + regoffset +
@@ -225,7 +225,7 @@ static int __init omap4_l3_probe(struct platform_device *pdev)
 	/*
 	 * Setup interrupt Handlers
 	 */
-	irq = platform_get_irq(pdev, 0);
+	l3->debug_irq = irq = platform_get_irq(pdev, 0);
 	ret = request_irq(irq,
 			l3_interrupt_handler,
 			IRQF_DISABLED, "l3-dbg-irq", l3);
@@ -234,9 +234,8 @@ static int __init omap4_l3_probe(struct platform_device *pdev)
 					 OMAP44XX_IRQ_L3_DBG);
 		goto err3;
 	}
-	l3->debug_irq = irq;
 
-	irq = platform_get_irq(pdev, 1);
+	l3->app_irq = irq = platform_get_irq(pdev, 1);
 	ret = request_irq(irq,
 			l3_interrupt_handler,
 			IRQF_DISABLED, "l3-app-irq", l3);
@@ -245,7 +244,6 @@ static int __init omap4_l3_probe(struct platform_device *pdev)
 					 OMAP44XX_IRQ_L3_APP);
 		goto err4;
 	}
-	l3->app_irq = irq;
 
 	return 0;
 
