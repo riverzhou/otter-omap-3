@@ -40,6 +40,7 @@
 #include <linux/syscore_ops.h>
 #include <linux/version.h>
 #include <linux/ctype.h>
+#include <linux/freezer.h>
 
 #include <linux/compat.h>
 #include <linux/syscalls.h>
@@ -319,6 +320,9 @@ void kernel_restart_prepare(char *cmd)
 	blocking_notifier_call_chain(&reboot_notifier_list, SYS_RESTART, cmd);
 	system_state = SYSTEM_RESTART;
 	usermodehelper_disable();
+	disable_nonboot_cpus();
+	pr_info("Attempting user space processes freeze..\n");
+	try_to_freeze_tasks_norecovery(true);
 	device_shutdown();
 	syscore_shutdown();
 }
@@ -349,6 +353,8 @@ static void kernel_shutdown_prepare(enum system_states state)
 		(state == SYSTEM_HALT)?SYS_HALT:SYS_POWER_OFF, NULL);
 	system_state = state;
 	usermodehelper_disable();
+	pr_info("Attempting user space processes freeze..\n");
+	try_to_freeze_tasks_norecovery(true);
 	device_shutdown();
 }
 /**
@@ -1819,7 +1825,7 @@ SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
 	return err ? -EFAULT : 0;
 }
 
-char poweroff_cmd[POWEROFF_CMD_PATH_LEN] = "/sbin/poweroff";
+char poweroff_cmd[POWEROFF_CMD_PATH_LEN] = "/system/bin/reboot -p";
 
 static void argv_cleanup(struct subprocess_info *info)
 {

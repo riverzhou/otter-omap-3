@@ -498,6 +498,7 @@ MMC_DEV_ATTR(serial, "0x%08x\n", card->cid.serial);
 MMC_DEV_ATTR(enhanced_area_offset, "%llu\n",
 		card->ext_csd.enhanced_area_offset);
 MMC_DEV_ATTR(enhanced_area_size, "%u\n", card->ext_csd.enhanced_area_size);
+MMC_DEV_ATTR(density, "0x%08x\n",card->ext_csd.sectors);
 
 static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_cid.attr,
@@ -513,6 +514,7 @@ static struct attribute *mmc_std_attrs[] = {
 	&dev_attr_serial.attr,
 	&dev_attr_enhanced_area_offset.attr,
 	&dev_attr_enhanced_area_size.attr,
+        &dev_attr_density.attr,
 	NULL,
 };
 
@@ -889,6 +891,7 @@ static void mmc_detect(struct mmc_host *host)
 
 		mmc_claim_host(host);
 		mmc_detach_bus(host);
+		mmc_power_off(host);
 		mmc_release_host(host);
 	}
 }
@@ -951,6 +954,14 @@ static int mmc_sleep(struct mmc_host *host)
 	struct mmc_card *card = host->card;
 	int err = -ENOSYS;
 
+	//If Manufacturer ID is Samsung (0x15), bypass Sleep command transmissi
+	if(card->cid.manfid == 0x15)
+		return 0;
+
+	/* Workaround for Hynix (0x90) */
+	if (card->cid.manfid == 0x90)
+		return 0;
+
 	if (card && card->ext_csd.rev >= 3) {
 		err = mmc_card_sleepawake(host, 1);
 		if (err < 0)
@@ -965,6 +976,14 @@ static int mmc_awake(struct mmc_host *host)
 {
 	struct mmc_card *card = host->card;
 	int err = -ENOSYS;
+
+	//If Manufacturer ID is Samsung (0x15), bypass Sleep command transmissio
+	if(card->cid.manfid == 0x15)
+		return 0;
+
+	/* Workaround for Hynix (0x90) */
+	if (card->cid.manfid == 0x90)
+		return 0;
 
 	if (card && card->ext_csd.rev >= 3) {
 		err = mmc_card_sleepawake(host, 0);

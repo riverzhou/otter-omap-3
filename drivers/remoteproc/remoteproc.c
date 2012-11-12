@@ -40,6 +40,7 @@
 #include <linux/elf.h>
 #include <linux/elfcore.h>
 #include <plat/remoteproc.h>
+#include <linux/kthread.h>
 
 /* list of available remote processors on this board */
 static LIST_HEAD(rprocs);
@@ -753,7 +754,11 @@ static int rproc_add_mem_entry(struct rproc *rproc, struct fw_resource *rsc)
 		 * carveouts we don't care about in a core dump.
 		 * Perhaps the ION carveout should be reported as RSC_DEVMEM.
 		 */
-		me->core = (rsc->type == RSC_CARVEOUT && rsc->pa != 0xba300000);
+#ifdef CONFIG_OTTER
+		me->core = (rsc->type == RSC_CARVEOUT && rsc->pa != 0x9FC00000);
+#else
+		me->core = (rsc->type == RSC_CARVEOUT && rsc->pa != 0xBF300000);
+#endif
 #endif
 	}
 
@@ -1098,8 +1103,11 @@ static void rproc_loader_cont(const struct firmware *fw, void *context)
 
 	if (!fw) {
 		dev_err(dev, "%s: failed to load %s\n", __func__, fwfile);
-		goto complete_fw;
+		goto out;
 	}
+
+	if (!rproc->fw)
+		rproc->fw = fw;	
 
 	dev_info(dev, "Loaded BIOS image %s, size %d\n", fwfile, fw->size);
 
@@ -1147,10 +1155,12 @@ static void rproc_loader_cont(const struct firmware *fw, void *context)
 	rproc_start(rproc, bootaddr);
 
 out:
-	release_firmware(fw);
-complete_fw:
 	/* allow all contexts calling rproc_put() to proceed */
 	complete_all(&rproc->firmware_loading_complete);
+}
+
+static void rproc_loader_thread(struct rproc *rproc){
+	rproc_loader_cont(rproc->fw, rproc);
 }
 
 static int rproc_loader(struct rproc *rproc)
@@ -1168,13 +1178,15 @@ static int rproc_loader(struct rproc *rproc)
 	 * allow building remoteproc as built-in kernel code, without
 	 * hanging the boot process
 	 */
-	ret = request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG, fwfile,
-			dev, GFP_KERNEL, rproc, rproc_loader_cont);
-	if (ret < 0) {
-		dev_err(dev, "request_firmware_nowait failed: %d\n", ret);
-		return ret;
-	}
-
+	if (!rproc->fw) {
+		ret = request_firmware_nowait(THIS_MODULE, FW_ACTION_HOTPLUG,
+			fwfile, dev, GFP_KERNEL, rproc, rproc_loader_cont);
+		if (ret < 0) {
+			dev_err(dev, "request_firmware_nowait failed: %d\n",ret);
+			return ret;
+		}
+	} else
+	kthread_run((void *)rproc_loader_thread, rproc,"rproc_loader_cont");
 	return 0;
 }
 
@@ -1207,7 +1219,7 @@ int rproc_set_secure(const char *name, bool enable)
 	_event_notify(rproc, RPROC_SECURE, (void *)enable);
 
 	/* block until the restart is complete */
-	if (wait_for_completion_interruptible(&rproc->secure_restart)) {
+	if (wait_for_completion_killable(&rproc->secure_restart)) {
 		pr_err("error waiting restart completion\n");
 		ret = -EINTR;
 		goto out;
@@ -1745,6 +1757,8 @@ int rproc_unregister(const char *name)
 	list_del(&rproc->next);
 	spin_unlock(&rprocs_lock);
 
+	if (rproc->fw)
+		release_firmware(rproc->fw);
 	rproc->secure_mode = false;
 	rproc->secure_ttb = NULL;
 	pm_qos_remove_request(rproc->qos_request);

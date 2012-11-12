@@ -18,8 +18,13 @@
 #define __OMAP_RAM_CONSOLE_H
 
 /* Board files use the following if they are ok with 512M size defaults */
-#define OMAP_RAM_CONSOLE_START_DEFAULT	(PLAT_PHYS_OFFSET + SZ_512M)
-#define OMAP_RAM_CONSOLE_SIZE_DEFAULT	SZ_2M
+#ifdef CONFIG_OTTER
+#define OMAP_RAM_CONSOLE_START_DEFAULT	(PLAT_PHYS_OFFSET + (SZ_1M * 400))
+#define OMAP_RAM_CONSOLE_SIZE_DEFAULT	SZ_4K
+#else
+#define OMAP_RAM_CONSOLE_START_DEFAULT	(PLAT_PHYS_OFFSET + (SZ_1M * 906))
+#define OMAP_RAM_CONSOLE_SIZE_DEFAULT	SZ_256K
+#endif
 
 #ifdef CONFIG_OMAP_RAM_CONSOLE
 extern int omap_ram_console_init(phys_addr_t phy_addr, size_t size);

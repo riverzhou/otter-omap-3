@@ -36,6 +36,7 @@
 #include "servicesext.h"
 #include "kerneldisplay.h"
 #include "omaplfb.h"
+#include <linux/trapz.h>
 
 #if defined(CONFIG_ION_OMAP)
 #include <linux/ion.h>
@@ -101,6 +102,7 @@ OMAPLFB_DEVINFO *OMAPLFBGetDevInfoPtr(unsigned uiFBDevID)
 	if (uiFBDevID >= OMAPLFB_MAX_NUM_DEVICES)
 	{
 		return NULL;
+
 	}
 
 	return gapsDevInfo[uiFBDevID];
@@ -149,6 +151,9 @@ static IMG_VOID SetDCState(IMG_HANDLE hDevice, IMG_UINT32 ui32State)
 			break;
 		case DC_STATE_NO_FLUSH_COMMANDS:
 			OMAPLFBAtomicBoolSet(&psDevInfo->sFlushCommands, OMAPLFB_FALSE);
+			break;
+		case DC_STATE_FORCE_SWAP_TO_SYSTEM:
+			OMAPLFBFlip(psDevInfo, &psDevInfo->sSystemBuffer);
 			break;
 		default:
 			break;
@@ -812,6 +817,9 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 							  OMAPLFB_BUFFER *psBuffer,
 							  unsigned long ulSwapInterval)
 {
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP, ProcessFlipV1, "SGX Process Fip");
+        TRAPZ_LOG_BEGIN(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP, ProcessFlipV1);
+
 	OMAPLFBCreateSwapChainLock(psDevInfo);
 
 	
@@ -858,6 +866,7 @@ static IMG_BOOL ProcessFlipV1(IMG_HANDLE hCmdCookie,
 
 	OMAPLFBCreateSwapChainUnLock(psDevInfo);
 
+        TRAPZ_LOG_END(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP, ProcessFlipV1);
 	return IMG_TRUE;
 }
 
@@ -879,6 +888,10 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 		IMG_UINTPTR_T uiUVAddr;
 		struct tiler_pa_info *psTilerInfo;
 	} asMemInfo[5];
+
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP, ProcessFlipV2, "DSS Comp Process Fip");
+        TRAPZ_LOG_BEGIN(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP, ProcessFlipV2);
+
 
 	memset(asMemInfo, 0, sizeof(asMemInfo));
 
@@ -988,6 +1001,8 @@ static IMG_BOOL ProcessFlipV2(IMG_HANDLE hCmdCookie,
 	{
 		tiler_pa_free(apsTilerPAs[i]);
 	}
+
+        TRAPZ_LOG_END(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP, ProcessFlipV2);
 
 	return IMG_TRUE;
 }

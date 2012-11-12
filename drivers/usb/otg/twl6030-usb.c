@@ -66,6 +66,7 @@
 #define USB_OTG_ADP_RISE		0x19
 #define USB_OTG_REVISION		0x1A
 
+#define TWL6030_MISC2			0xE5
 #define TWL6030_BACKUP_REG		0xFA
 
 #define STS_HW_CONDITIONS		0x21
@@ -102,11 +103,10 @@ struct twl6030_usb {
 
 	/* used to set vbus, in atomic path */
 	struct work_struct	set_vbus_work;
-
+	struct delayed_work	enable_irq_work;
 	int			irq1;
 	int			irq2;
 	unsigned int		usb_cinlimit_mA;
-	u8			linkstat;
 	u8			asleep;
 	u8			prev_vbus;
 	bool			irq_enabled;
@@ -143,7 +143,7 @@ static inline u8 twl6030_readb(struct twl6030_usb *twl, u8 module, u8 address)
 					module, address, ret);
 	return ret;
 }
-
+#if 0
 /*-------------------------------------------------------------------------*/
 static int twl6030_set_phy_clk(struct otg_transceiver *x, int on)
 {
@@ -159,7 +159,7 @@ static int twl6030_set_phy_clk(struct otg_transceiver *x, int on)
 
 	return 0;
 }
-
+#endif
 static int twl6030_phy_init(struct otg_transceiver *x)
 {
 	struct twl6030_usb *twl;
@@ -170,7 +170,7 @@ static int twl6030_phy_init(struct otg_transceiver *x)
 	dev  = twl->dev;
 	pdata = dev->platform_data;
 
-	if (twl->linkstat == USB_EVENT_ID)
+	if (twl->otg.last_event == USB_EVENT_ID)
 		pdata->phy_power(twl->dev, 1, 1);
 	else
 		pdata->phy_power(twl->dev, 0, 1);
@@ -217,6 +217,7 @@ static int twl6030_start_srp(struct otg_transceiver *x)
 static int twl6030_usb_ldo_init(struct twl6030_usb *twl)
 {
 	char *regulator_name;
+	u8 misc2_data = 0;
 
 	if (twl->features & TWL6025_SUBCLASS)
 		regulator_name = "ldousb";
@@ -239,6 +240,11 @@ static int twl6030_usb_ldo_init(struct twl6030_usb *twl)
 	 */
 	twl6030_writeb(twl, TWL_MODULE_USB, 0x14, USB_ID_CTRL_SET);
 
+	/* Program MISC2 register and clear bit VUSB_IN_VBAT */
+	misc2_data = twl6030_readb(twl, TWL6030_MODULE_ID0, TWL6030_MISC2);
+	misc2_data &= 0xEF;
+	twl6030_writeb(twl, TWL6030_MODULE_ID0, misc2_data, TWL6030_MISC2);
+
 	return 0;
 }
 
@@ -251,7 +257,7 @@ static ssize_t twl6030_usb_vbus_show(struct device *dev,
 
 	spin_lock_irqsave(&twl->lock, flags);
 
-	switch (twl->linkstat) {
+	switch (twl->otg.last_event) {
 	case USB_EVENT_VBUS:
 		ret = snprintf(buf, PAGE_SIZE, "vbus\n");
 		break;
@@ -274,7 +280,7 @@ static irqreturn_t twl6030_usb_irq(int irq, void *_twl)
 {
 	struct twl6030_usb *twl = _twl;
 	int status;
-	u8 vbus_state, hw_state;
+	u8 vbus_state, hw_state, misc2_data;
 	unsigned charger_type;
 
 	hw_state = twl6030_readb(twl, TWL6030_MODULE_ID0, STS_HW_CONDITIONS);
@@ -288,7 +294,18 @@ static irqreturn_t twl6030_usb_irq(int irq, void *_twl)
 		return IRQ_HANDLED;
 
 	if ((vbus_state) && !(hw_state & STS_USB_ID)) {
+		//detect by charger
+		__raw_writel(0x40000000,OMAP2_L4_IO_ADDRESS(0x4a100000 + (0x620)));
+
+		/* Program MISC2 register and set bit VUSB_IN_VBAT */
+		misc2_data = twl6030_readb(twl, TWL6030_MODULE_ID0,
+				TWL6030_MISC2);
+		misc2_data |= 0x10;
+		twl6030_writeb(twl, TWL6030_MODULE_ID0, misc2_data,
+				TWL6030_MISC2);
+
 		regulator_enable(twl->usb3v3);
+		# if 0 //detect by omap
 		charger_type = omap4_charger_detect();
 		if ((charger_type == POWER_SUPPLY_TYPE_USB_CDP)
 				|| (charger_type == POWER_SUPPLY_TYPE_USB)) {
@@ -297,36 +314,42 @@ static irqreturn_t twl6030_usb_irq(int irq, void *_twl)
 			twl->otg.default_a = false;
 			twl->asleep = 1;
 			twl->otg.state = OTG_STATE_B_IDLE;
-			twl->linkstat = status;
-			twl->otg.last_event = status;
 		} else if (charger_type == POWER_SUPPLY_TYPE_USB_DCP) {
 			regulator_disable(twl->usb3v3);
 			status = USB_EVENT_CHARGER;
 			twl->usb_cinlimit_mA = 1800;
 			twl->otg.state = OTG_STATE_B_IDLE;
-			twl->linkstat = status;
-			twl->otg.last_event = status;
 		} else {
 			regulator_disable(twl->usb3v3);
 			goto vbus_notify;
 		}
+		#endif
+		status = USB_EVENT_DETECT_SOURCE;
+        twl->otg.default_a = false;
+		twl->asleep = 1;
+		twl->otg.state = OTG_STATE_B_IDLE;
+			
 		atomic_notifier_call_chain(&twl->otg.notifier,
 				status, &charger_type);
 	}
 	if (!vbus_state) {
 		status = USB_EVENT_NONE;
-		twl->linkstat = status;
-		twl->otg.last_event = status;
 		atomic_notifier_call_chain(&twl->otg.notifier,
 				status, twl->otg.gadget);
 		if (twl->asleep) {
 			regulator_disable(twl->usb3v3);
 			twl->asleep = 0;
-
+			/* Program MISC2 register and clear bit VUSB_IN_VBAT */
+			misc2_data = twl6030_readb(twl, TWL6030_MODULE_ID0,
+							TWL6030_MISC2);
+			misc2_data &= 0xEF;
+			twl6030_writeb(twl, TWL6030_MODULE_ID0, misc2_data,
+							TWL6030_MISC2);
 		}
 	}
-
+#if 0
 vbus_notify:
+#endif
 	sysfs_notify(&twl->dev->kobj, NULL, "vbus");
 	twl->prev_vbus = vbus_state;
 	return IRQ_HANDLED;
@@ -338,7 +361,7 @@ static irqreturn_t twl6030_usbotg_irq(int irq, void *_twl)
 #ifndef CONFIG_USB_MUSB_PERIPHERAL
 	struct twl6030_usb *twl = _twl;
 	int status = USB_EVENT_NONE;
-	u8 hw_state;
+	u8 hw_state, misc2_data;
 
 	hw_state = twl6030_readb(twl, TWL6030_MODULE_ID0, STS_HW_CONDITIONS);
 
@@ -347,6 +370,12 @@ static irqreturn_t twl6030_usbotg_irq(int irq, void *_twl)
 		if (twl->otg.state == OTG_STATE_A_IDLE)
 			return IRQ_HANDLED;
 
+		/* Program MISC2 register and set bit VUSB_IN_VBAT */
+		misc2_data = twl6030_readb(twl, TWL6030_MODULE_ID0,
+						TWL6030_MISC2);
+		misc2_data |= 0x10;
+		twl6030_writeb(twl, TWL6030_MODULE_ID0, misc2_data,
+						TWL6030_MISC2);
 		regulator_enable(twl->usb3v3);
 		twl->asleep = 1;
 		twl6030_writeb(twl, TWL_MODULE_USB, 0x1, USB_ID_INT_EN_HI_CLR);
@@ -354,8 +383,6 @@ static irqreturn_t twl6030_usbotg_irq(int irq, void *_twl)
 		status = USB_EVENT_ID;
 		twl->otg.default_a = true;
 		twl->otg.state = OTG_STATE_A_IDLE;
-		twl->linkstat = status;
-		twl->otg.last_event = status;
 		atomic_notifier_call_chain(&twl->otg.notifier, status,
 							twl->otg.gadget);
 	} else  {
@@ -409,6 +436,12 @@ unsigned int twl6030_get_usb_max_power(struct otg_transceiver *x)
 	return twl->usb_cinlimit_mA;
 }
 
+static void otg_enable_irq_work(struct work_struct *data)
+{
+	struct twl6030_usb *twl = container_of(data, struct twl6030_usb,
+								enable_irq_work.work);
+	twl6030_enable_irq(&twl->otg);
+}
 static void otg_set_vbus_work(struct work_struct *data)
 {
 	struct twl6030_usb *twl = container_of(data, struct twl6030_usb,
@@ -531,6 +564,7 @@ static int __devinit twl6030_usb_probe(struct platform_device *pdev)
 	ATOMIC_INIT_NOTIFIER_HEAD(&twl->otg.notifier);
 
 	INIT_WORK(&twl->set_vbus_work, otg_set_vbus_work);
+	INIT_DELAYED_WORK_DEFERRABLE(&twl->enable_irq_work,otg_enable_irq_work);
 
 	twl->vbus_enable = false;
 	twl->irq_enabled = true;
@@ -560,7 +594,9 @@ static int __devinit twl6030_usb_probe(struct platform_device *pdev)
 	twl->asleep = 0;
 	pdata->phy_init(dev);
 	twl6030_phy_suspend(&twl->otg, 0);
-	twl6030_enable_irq(&twl->otg);
+//	twl6030_enable_irq(&twl->otg);
+	schedule_delayed_work(&twl->enable_irq_work,msecs_to_jiffies(10000));
+
 	dev_info(&pdev->dev, "Initialized TWL6030 USB module\n");
 
 	return 0;
@@ -584,6 +620,7 @@ static int __exit twl6030_usb_remove(struct platform_device *pdev)
 	pdata->phy_exit(twl->dev);
 	device_remove_file(twl->dev, &dev_attr_vbus);
 	cancel_work_sync(&twl->set_vbus_work);
+	cancel_delayed_work(&twl->enable_irq_work);
 	kfree(twl);
 
 	return 0;

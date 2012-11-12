@@ -1110,6 +1110,7 @@ static struct omap_hwmod_irq_info omap44xx_thermal_sensor_irqs[] = {
 	{ .name = "thermal_alert", .irq = 126 + OMAP44XX_IRQ_GIC_START },
 };
 
+#ifndef CONFIG_LAB126
 static struct omap_hwmod_addr_space omap44xx_thermal_sensor_addrs[] = {
 	{
 		.pa_start       = 0x4a002378,
@@ -1128,6 +1129,7 @@ static struct omap_hwmod_ocp_if omap44xx_l4_cfg__thermal_sensor = {
 	.user           = OCP_USER_MPU | OCP_USER_SDMA,
 };
 
+
 /* ctrl_module_core slave ports */
 static struct omap_hwmod_ocp_if *omap44xx_thermal_sensor_slaves[] = {
 	&omap44xx_l4_cfg__thermal_sensor,
@@ -1136,7 +1138,22 @@ static struct omap_hwmod_ocp_if *omap44xx_thermal_sensor_slaves[] = {
 static struct omap_hwmod_opt_clk thermal_sensor446x_opt_clks[] = {
 	{ .role = "fclk", .clk = "bandgap_ts_fclk" },
 };
+#endif
 
+#ifdef CONFIG_LAB126
+static struct omap_hwmod omap44xx_thermal_sensor_hwmod = {
+	.name           = "thermal_sensor",
+	.class          = &omap44xx_thermal_sensor_hwmod_class,
+	.mpu_irqs       = omap44xx_thermal_sensor_irqs,
+	.mpu_irqs_cnt   = ARRAY_SIZE(omap44xx_thermal_sensor_irqs),
+	.prcm           = {
+		.omap4 = {
+			.clkctrl_reg = OMAP4430_CM_WKUP_BANDGAP_CLKCTRL,
+		},
+	},
+	.omap_chip      = OMAP_CHIP_INIT(CHIP_IS_OMAP44XX),
+};
+#else
 static struct omap_hwmod omap44xx_thermal_sensor_hwmod = {
 	.name           = "thermal_sensor",
 	.class          = &omap44xx_thermal_sensor_hwmod_class,
@@ -1154,6 +1171,7 @@ static struct omap_hwmod omap44xx_thermal_sensor_hwmod = {
 	.opt_clks_cnt   = ARRAY_SIZE(thermal_sensor446x_opt_clks),
 	.omap_chip      = OMAP_CHIP_INIT(CHIP_IS_OMAP446X),
 };
+#endif
 
 /*
  * 'bandgap' class
@@ -1551,21 +1569,32 @@ static struct omap_hwmod_class_sysconfig omap44xx_dss_sysc = {
 
 static int omap44xx_dss_reset(struct omap_hwmod *oh)
 {
-#define DISPC_IRQSTATUS		(0x48041018UL)
-#define DISPC_CONTROL1		(0x48041040UL)
-#define DISPC_CONTROL2		(0x48041238UL)
+#define DISPC_IRQSTATUS		(0x018UL)
+#define DISPC_CONTROL1		(0x040UL)
+#define DISPC_CONTROL2		(0x238UL)
+
+	void __iomem *base_addr, *ctrl1_addr, *ctrl2_addr, *irq_addr;
 	u32 ctrl1_mask = 0;
 	u32 ctrl2_mask = 0;
 	u32 irq_mask = 0;
 	u32 val;
 	unsigned long end_wait;
 
+	/* map DSS physical addresses diapazon (4kBytes) */
+	base_addr = ioremap(0x58001000, 0x00001000);
+	if (!base_addr)
+		return -ENOMEM;
+	ctrl1_addr = base_addr + DISPC_CONTROL1;
+	ctrl2_addr = base_addr + DISPC_CONTROL2;
+	irq_addr = base_addr + DISPC_IRQSTATUS;
+
 	/* HACK */
 	/* If LCD1/LCD2/TV are active, disable them first before
 	 * moving the clock sources back to PRCM. We don't want to change
 	 * the clock source while a DMA is active.
 	 */
-	val = omap_readl(DISPC_CONTROL1);
+	/* Read DISPC_CONTROL1 register */
+	val = __raw_readl(ctrl1_addr);
 	if (val & (1 << 0)) {
 		/* LCD1 */
 		irq_mask |= 1 << 0;
@@ -1576,7 +1605,8 @@ static int omap44xx_dss_reset(struct omap_hwmod *oh)
 		irq_mask |= 1 << 24;
 		ctrl1_mask |= 1 << 1;
 	}
-	val = omap_readl(DISPC_CONTROL2);
+
+	val = __raw_readl(ctrl2_addr);
 	if (val & (1 << 0)) {
 		/* LCD2 */
 		irq_mask |= 1 << 22;
@@ -1584,20 +1614,24 @@ static int omap44xx_dss_reset(struct omap_hwmod *oh)
 	}
 
 	/* disable the active controllers */
-	omap_writel(omap_readl(DISPC_CONTROL1) & (~ctrl1_mask), DISPC_CONTROL1);
-	omap_writel(omap_readl(DISPC_CONTROL2) & (~ctrl2_mask), DISPC_CONTROL2);
+	__raw_writel(__raw_readl(ctrl1_addr) & (~ctrl1_mask), ctrl1_addr);
+	__raw_writel(__raw_readl(ctrl2_addr) & (~ctrl2_mask), ctrl2_addr);
 
-	omap_writel(irq_mask, DISPC_IRQSTATUS);
+	__raw_writel(irq_mask, irq_addr);
 
 	end_wait = jiffies + msecs_to_jiffies(50);
-	while (((omap_readl(DISPC_CONTROL1) & ctrl1_mask) ||
-		(omap_readl(DISPC_CONTROL2) & ctrl2_mask) ||
-		((omap_readl(DISPC_IRQSTATUS) & irq_mask) != irq_mask)) &&
-	       time_before(jiffies, end_wait))
-		cpu_relax();
-	WARN_ON((omap_readl(DISPC_CONTROL1) & ctrl1_mask) ||
-		(omap_readl(DISPC_CONTROL2) & ctrl2_mask) ||
-		((omap_readl(DISPC_IRQSTATUS) & irq_mask) != irq_mask));
+
+	while (((__raw_readl(ctrl1_addr) & ctrl1_mask) ||
+		(__raw_readl(ctrl2_addr) & ctrl2_mask) ||
+		((__raw_readl(irq_addr) & irq_mask) != irq_mask)) &&
+		time_before(jiffies, end_wait))
+						cpu_relax();
+
+	WARN_ON((__raw_readl(ctrl1_addr) & ctrl1_mask) ||
+		(__raw_readl(ctrl2_addr) & ctrl2_mask) ||
+		((__raw_readl(irq_addr) & irq_mask) != irq_mask));
+
+	iounmap(base_addr);
 
 	omap_hwmod_write(0x0, oh, 0x40);
 	return 0;
@@ -1633,7 +1667,7 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__dss = {
 	.clk		= "l3_div_ck",
 	.addr		= omap44xx_dss_dma_addrs,
 	.addr_cnt	= ARRAY_SIZE(omap44xx_dss_dma_addrs),
-	.user		= OCP_USER_SDMA,
+	.user		= OCP_USER_SDMA | OCP_USER_MPU,
 };
 
 static struct omap_hwmod_addr_space omap44xx_dss_addrs[] = {
@@ -1667,7 +1701,7 @@ static struct omap_hwmod_opt_clk dss_opt_clks[] = {
 static struct omap_hwmod omap44xx_dss_hwmod = {
 	.name		= "dss_core",
 	.class		= &omap44xx_dss_hwmod_class,
-#ifdef CONFIG_FB_OMAP_BOOTLOADER_INIT
+#if defined(CONFIG_OTTER) || defined(CONFIG_OTTER2)
 	.flags		= HWMOD_INIT_NO_RESET,
 #endif
 	.main_clk	= "dss_fck",
@@ -1733,7 +1767,7 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__dss_dispc = {
 	.clk		= "l3_div_ck",
 	.addr		= omap44xx_dss_dispc_dma_addrs,
 	.addr_cnt	= ARRAY_SIZE(omap44xx_dss_dispc_dma_addrs),
-	.user		= OCP_USER_SDMA,
+	.user		= OCP_USER_SDMA | OCP_USER_MPU,
 };
 
 static struct omap_hwmod_addr_space omap44xx_dss_dispc_addrs[] = {
@@ -1774,7 +1808,7 @@ static struct omap_hwmod_opt_clk dispc_opt_clks[] = {
 static struct omap_hwmod omap44xx_dss_dispc_hwmod = {
 	.name		= "dss_dispc",
 	.class		= &omap44xx_dispc_hwmod_class,
-#ifdef CONFIG_FB_OMAP_BOOTLOADER_INIT
+#if defined(CONFIG_OTTER) || defined(CONFIG_OTTER2)
 	.flags		= HWMOD_CONTROL_OPT_CLKS_IN_RESET | HWMOD_INIT_NO_RESET,
 #else
 	.flags		= HWMOD_CONTROL_OPT_CLKS_IN_RESET,
@@ -1843,7 +1877,7 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__dss_dsi1 = {
 	.clk		= "l3_div_ck",
 	.addr		= omap44xx_dss_dsi1_dma_addrs,
 	.addr_cnt	= ARRAY_SIZE(omap44xx_dss_dsi1_dma_addrs),
-	.user		= OCP_USER_SDMA,
+	.user		= OCP_USER_SDMA | OCP_USER_MPU,
 };
 
 static struct omap_hwmod_addr_space omap44xx_dss_dsi1_addrs[] = {
@@ -1923,7 +1957,7 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__dss_dsi2 = {
 	.clk		= "l3_div_ck",
 	.addr		= omap44xx_dss_dsi2_dma_addrs,
 	.addr_cnt	= ARRAY_SIZE(omap44xx_dss_dsi2_dma_addrs),
-	.user		= OCP_USER_SDMA,
+	.user		= OCP_USER_SDMA | OCP_USER_MPU,
 };
 
 static struct omap_hwmod_addr_space omap44xx_dss_dsi2_addrs[] = {
@@ -2016,7 +2050,7 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__dss_hdmi = {
 	.clk		= "l3_div_ck",
 	.addr		= omap44xx_dss_hdmi_dma_addrs,
 	.addr_cnt	= ARRAY_SIZE(omap44xx_dss_hdmi_dma_addrs),
-	.user		= OCP_USER_SDMA,
+	.user		= OCP_USER_SDMA | OCP_USER_MPU,
 };
 
 static struct omap_hwmod_addr_space omap44xx_dss_hdmi_addrs[] = {
@@ -2112,7 +2146,7 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__dss_rfbi = {
 	.clk		= "l3_div_ck",
 	.addr		= omap44xx_dss_rfbi_dma_addrs,
 	.addr_cnt	= ARRAY_SIZE(omap44xx_dss_rfbi_dma_addrs),
-	.user		= OCP_USER_SDMA,
+	.user		= OCP_USER_SDMA | OCP_USER_MPU,
 };
 
 static struct omap_hwmod_addr_space omap44xx_dss_rfbi_addrs[] = {
@@ -2190,7 +2224,7 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__dss_venc = {
 	.clk		= "l3_div_ck",
 	.addr		= omap44xx_dss_venc_dma_addrs,
 	.addr_cnt	= ARRAY_SIZE(omap44xx_dss_venc_dma_addrs),
-	.user		= OCP_USER_SDMA,
+	.user		= OCP_USER_SDMA | OCP_USER_MPU,
 };
 
 static struct omap_hwmod_addr_space omap44xx_dss_venc_addrs[] = {
@@ -2565,6 +2599,9 @@ static struct omap_hwmod omap44xx_gpio2_hwmod = {
 	.mpu_irqs	= omap44xx_gpio2_irqs,
 	.mpu_irqs_cnt	= ARRAY_SIZE(omap44xx_gpio2_irqs),
 	.main_clk	= "gpio2_ick",
+#if defined(CONFIG_OTTER) || defined(CONFIG_OTTER2)
+	.flags		= HWMOD_INIT_NO_RESET,
+#endif
 	.prcm = {
 		.omap4 = {
 			.clkctrl_reg = OMAP4430_CM_L4PER_GPIO2_CLKCTRL,
@@ -4824,11 +4861,12 @@ static struct omap_hwmod_class omap44xx_timer_hwmod_class = {
 	.sysc	= &omap44xx_timer_sysc,
 	.rev	= OMAP_TIMER_IP_VERSION_2,
 };
-
+#if 0
 /* secure timer can assign this to .dev_attr field */
 static struct omap_secure_timer_dev_attr secure_timer_dev_attr = {
 	.is_secure_timer        = true,
 };
+#endif
 
 /* timer1 */
 static struct omap_hwmod omap44xx_timer1_hwmod;
@@ -5351,6 +5389,9 @@ static struct omap_hwmod_ocp_if *omap44xx_timer10_slaves[] = {
 static struct omap_hwmod omap44xx_timer10_hwmod = {
 	.name		= "timer10",
 	.class		= &omap44xx_timer_1ms_hwmod_class,
+#if defined(CONFIG_OTTER) || defined(CONFIG_OTTER2)
+	.flags		= HWMOD_INIT_NO_RESET,
+#endif
 	.mpu_irqs	= omap44xx_timer10_irqs,
 	.mpu_irqs_cnt	= ARRAY_SIZE(omap44xx_timer10_irqs),
 	.main_clk	= "timer10_fck",

@@ -36,6 +36,7 @@
 
 #include "dss.h"
 #include "dss_features.h"
+#include <linux/trapz.h>
 
 static int num_managers;
 static struct list_head manager_list;
@@ -1426,9 +1427,9 @@ static void dss_completion_irq_handler(void *data, u32 mask)
 	const int num_mgrs = MAX_DSS_MANAGERS;
 	const u32 masks[] = {
 		DISPC_IRQ_FRAMEDONE | DISPC_IRQ_VSYNC,
-		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2,
 		DISPC_IRQ_FRAMEDONETV | DISPC_IRQ_EVSYNC_EVEN |
-		DISPC_IRQ_EVSYNC_ODD
+		DISPC_IRQ_EVSYNC_ODD,
+		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2
 	};
 	int i;
 
@@ -1466,9 +1467,9 @@ static void schedule_completion_irq(void)
 	const int num_mgrs = MAX_DSS_MANAGERS;
 	const u32 masks[] = {
 		DISPC_IRQ_FRAMEDONE | DISPC_IRQ_VSYNC,
-		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2,
 		DISPC_IRQ_FRAMEDONETV | DISPC_IRQ_EVSYNC_EVEN |
-		DISPC_IRQ_EVSYNC_ODD
+		DISPC_IRQ_EVSYNC_ODD,
+		DISPC_IRQ_FRAMEDONE2 | DISPC_IRQ_VSYNC2
 	};
 	u32 mask = 0;
 	int i;
@@ -1490,7 +1491,13 @@ static void schedule_completion_irq(void)
 
 	if (mask != dss_cache.comp_irq_enabled) {
 		if (dss_cache.comp_irq_enabled)
-			omap_dispc_unregister_isr(dss_completion_irq_handler,
+			/* Code paths leading to here are non-trivial, and
+			 * this particular callback does not seem to be
+			 * needing synchronized unregister. To ease our
+			 * lives, just leave it nosync.
+			 */
+			omap_dispc_unregister_isr_nosync(
+				dss_completion_irq_handler,
 				NULL, dss_cache.comp_irq_enabled);
 		if (mask)
 			omap_dispc_register_isr(dss_completion_irq_handler,
@@ -1597,6 +1604,9 @@ static void dss_apply_irq_handler(void *data, u32 mask)
 	for (i = 0; i < num_mgrs; i++)
 		mgr_busy[i] |= dispc_go_busy(i);
 
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssIrqHandler, "dss_apply_irq_handler: Handle the VSYNC interrupt - acknole    dge/clear CPU interrput lines");
+        TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssIrqHandler, 0, 0);
+
 	/* keep running as long as there are busy managers, so that
 	 * we can collect overlay-applied information */
 	for (i = 0; i < num_mgrs; ++i) {
@@ -1609,7 +1619,7 @@ static void dss_apply_irq_handler(void *data, u32 mask)
 	if (dss_has_feature(FEAT_MGR_LCD2))
 		irq_mask |= DISPC_IRQ_VSYNC2;
 
-	omap_dispc_unregister_isr(dss_apply_irq_handler, NULL, irq_mask);
+	omap_dispc_unregister_isr_nosync(dss_apply_irq_handler, NULL, irq_mask);
 	dss_cache.irq_enabled = false;
 
 end:
@@ -1621,8 +1631,11 @@ static int omap_dss_mgr_blank(struct omap_overlay_manager *mgr,
 {
 	struct overlay_cache_data *oc;
 	struct manager_cache_data *mc;
+	struct omap_dss_device *dev;
+	struct omap_dss_driver *drv;
 	unsigned long flags;
 	int r, r_get, i;
+	bool update = false;
 
 	DSSDBG("omap_dss_mgr_blank(%s,wait=%d)\n", mgr->name, wait_for_go);
 
@@ -1630,6 +1643,11 @@ static int omap_dss_mgr_blank(struct omap_overlay_manager *mgr,
 	/* still clear cache even if failed to get clocks, just don't config */
 
 	spin_lock_irqsave(&dss_cache.lock, flags);
+
+	/* there is no GO on inactive displays */
+	if (!mgr->device ||
+	    mgr->device->state != OMAP_DSS_DISPLAY_ACTIVE)
+		wait_for_go = false;
 
 	/* disable overlays in overlay info structs and in cache */
 	for (i = 0; i < omap_dss_get_num_overlays(); i++) {
@@ -1696,31 +1714,31 @@ static int omap_dss_mgr_blank(struct omap_overlay_manager *mgr,
 			oc = &dss_cache.overlay_cache[i];
 			if (oc->channel != mgr->id)
 				continue;
-			if (r && oc->dirty)
-				dss_ovl_configure_cb(&oc->cb, i, false);
-			if (oc->shadow_dirty) {
-				dss_ovl_program_cb(&oc->cb, i);
-				oc->dispc_channel = oc->channel;
-				oc->shadow_dirty = false;
-			} else {
-				pr_warn("ovl%d-shadow is not dirty\n", i);
-			}
+			dss_ovl_configure_cb(&oc->cb, i, false);
+			dss_ovl_program_cb(&oc->cb, i);
+			oc->dispc_channel = oc->channel;
 		}
 
-		if (r && mc->dirty)
-			dss_ovl_configure_cb(&mc->cb, i, false);
-		if (mc->shadow_dirty) {
-			dss_ovl_program_cb(&mc->cb, i);
-			mc->shadow_dirty = false;
-		} else {
-			pr_warn("mgr%d-shadow is not dirty\n", mgr->id);
-		}
+		dss_ovl_configure_cb(&mc->cb, i, false);
+		dss_ovl_program_cb(&mc->cb, i);
+	}
+
+	if (wait_for_go) {
+		dev = mgr->device;
+		drv = dev->driver;
+		update = drv && mc->manual_upd_display;
 	}
 
 	spin_unlock_irqrestore(&dss_cache.lock, flags);
 
-	if (wait_for_go)
-		mgr->wait_for_go(mgr);
+	if (wait_for_go) {
+		if (update)
+			drv->update(mgr->device, 0, 0,
+						dev->panel.timings.x_res,
+						dev->panel.timings.y_res);
+		else
+			mgr->wait_for_go(mgr);
+	}
 
 	if (!r_get)
 		dispc_runtime_put();
@@ -1758,18 +1776,17 @@ static int omap_dss_mgr_apply(struct omap_overlay_manager *mgr)
 
 	DSSDBG("omap_dss_mgr_apply(%s)\n", mgr->name);
 
+	if (!mgr->device || mgr->device->state != OMAP_DSS_DISPLAY_ACTIVE) {
+		pr_info_ratelimited("cannot apply mgr(%s) on inactive device\n",
+								mgr->name);
+		return -ENODEV;
+	}
+
 	r = dispc_runtime_get();
 	if (r)
 		return r;
 
 	spin_lock_irqsave(&dss_cache.lock, flags);
-
-	if (!mgr->device || mgr->device->state != OMAP_DSS_DISPLAY_ACTIVE) {
-		pr_info_ratelimited("cannot apply mgr(%s) on inactive device\n",
-								mgr->name);
-		r = -ENODEV;
-		goto done;
-	}
 
 	/* Configure overlays */
 	for (i = 0; i < omap_dss_get_num_overlays(); ++i) {
@@ -1965,6 +1982,9 @@ skip_mgr:
 		}
 	}
 
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCfgDispCtrl,  "DSS manager configure the display controller");
+        TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssCfgDispCtrl, 0, 0);
+
 	r = 0;
 	if (!dss_cache.irq_enabled) {
 		u32 mask;
@@ -1979,7 +1999,6 @@ skip_mgr:
 	}
 	configure_dispc();
 
-done:
 	spin_unlock_irqrestore(&dss_cache.lock, flags);
 
 	dispc_runtime_put();

@@ -49,6 +49,7 @@ extern int thaw_process(struct task_struct *p);
 
 extern void refrigerator(void);
 extern int freeze_processes(void);
+extern int try_to_freeze_tasks_norecovery(bool sig_only);
 extern void thaw_processes(void);
 
 static inline int try_to_freeze(void)

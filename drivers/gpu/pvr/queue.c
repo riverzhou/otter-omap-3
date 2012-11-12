@@ -24,6 +24,8 @@
  *
  ******************************************************************************/
 
+#include <linux/trapz.h>
+
 #include "services_headers.h"
 
 #include "lists.h"
@@ -732,7 +734,7 @@ PVRSRV_ERROR PVRSRVProcessCommand(SYS_DATA			*psSysData,
 {
 	PVRSRV_SYNC_OBJECT		*psWalkerObj;
 	PVRSRV_SYNC_OBJECT		*psEndObj;
-	IMG_UINT32				i;
+	IMG_UINT32				i,CmdCompltData;
 	COMMAND_COMPLETE_DATA	*psCmdCompleteData;
 	PVRSRV_ERROR			eError = PVRSRV_OK;
 	IMG_UINT32				ui32WriteOpsComplete;
@@ -866,9 +868,11 @@ PVRSRV_ERROR PVRSRVProcessCommand(SYS_DATA			*psSysData,
 
 	
 
+	CmdCompltData = (IMG_UINT32)psCmdCompleteData;
 
 
-
+	TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_PVR, PVRProcessCommand, "PVR queue.c command started");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_PVR, PVRProcessCommand, "CmdCookie %d CommandType %d", CmdCompltData, psCommand->CommandType);
 
 
 
@@ -989,9 +993,12 @@ IMG_EXPORT
 IMG_VOID PVRSRVCommandCompleteKM(IMG_HANDLE	hCmdCookie,
 								 IMG_BOOL	bScheduleMISR)
 {
-	IMG_UINT32				i;
+	IMG_UINT32				i,CmdCookie = (IMG_UINT32)hCmdCookie;
 	COMMAND_COMPLETE_DATA	*psCmdCompleteData = (COMMAND_COMPLETE_DATA *)hCmdCookie;
 	SYS_DATA				*psSysData;
+
+	TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_PVR, PVRCommandComplete, "PVR queue.c command complete");
+	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_PVR, PVRCommandComplete, "CmdCookie %d scheduleMISR %d", CmdCookie, bScheduleMISR);
 
 	SysAcquireData(&psSysData);
 

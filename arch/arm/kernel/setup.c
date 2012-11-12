@@ -98,6 +98,31 @@ unsigned int elf_hwcap __read_mostly;
 EXPORT_SYMBOL(elf_hwcap);
 
 
+#ifdef CONFIG_MACH_OMAP_4430SDP
+
+unsigned char system_rev16[REVISION16_SIZE+1];
+EXPORT_SYMBOL(system_rev16);
+
+unsigned char system_serial16[SERIAL16_SIZE+1];
+EXPORT_SYMBOL(system_serial16);
+
+unsigned char system_bootmode[BOOTMODE_SIZE+1];
+EXPORT_SYMBOL(system_bootmode);
+
+unsigned char system_postmode[BOOTMODE_SIZE+1];
+EXPORT_SYMBOL(system_postmode);
+
+unsigned char system_mac_addr[MAC_ADDR_SIZE+1];
+EXPORT_SYMBOL(system_mac_addr);
+
+unsigned char system_mac_sec[MAC_SEC_SIZE+1];
+EXPORT_SYMBOL(system_mac_sec);
+
+unsigned char system_bt_mac_addr[MAC_ADDR_SIZE+1];
+EXPORT_SYMBOL(system_bt_mac_addr);
+
+#endif //CONFIG_MACH_OMAP_4430SDP
+
 #ifdef MULTI_CPU
 struct processor processor __read_mostly;
 #endif
@@ -660,6 +685,70 @@ static int __init parse_tag_revision(const struct tag *tag)
 
 __tagtable(ATAG_REVISION, parse_tag_revision);
 
+#if defined(CONFIG_MACH_OMAP_4430SDP)
+
+static int __init parse_tag_serial16(const struct tag *tag)
+{
+    memset(system_serial16, 0, SERIAL16_SIZE+1);
+	memcpy(system_serial16,
+        tag->u.id16.data,
+        SERIAL16_SIZE); /* Serial nuber */
+
+	pr_debug("ATAGS:serial16:str=\"%.*s\"\n",
+        SERIAL16_SIZE,
+        system_serial16);
+	return 0;
+}
+
+__tagtable(ATAG_SERIAL16, parse_tag_serial16);
+
+static int __init parse_tag_revision16(const struct tag *tag)
+{
+    memset(system_rev16, 0, REVISION16_SIZE+1);
+    memcpy(system_rev16, tag->u.id16.data, REVISION16_SIZE); /* board id */
+    pr_debug("ATAGS:rev16:str=\"%.*s\"\n",
+        REVISION16_SIZE, system_rev16);
+	return 0;
+}
+
+__tagtable(ATAG_REVISION16, parse_tag_revision16);
+
+
+static int __init parse_tag_bootmode(const struct tag *tag)
+{
+    memset(system_bootmode, 0, BOOTMODE_SIZE+1);
+    memset(system_postmode, 0, BOOTMODE_SIZE+1);
+	memcpy(system_bootmode, tag->u.bootmode.boot, BOOTMODE_SIZE);
+	memcpy(system_postmode, tag->u.bootmode.post, BOOTMODE_SIZE);
+	pr_debug("ATAGS:bootmode:boot=\"%.*s\" post=\"%.*s\"\n",
+               BOOTMODE_SIZE, system_bootmode, BOOTMODE_SIZE, system_postmode);
+	return 0;
+}
+
+__tagtable(ATAG_BOOTMODE, parse_tag_bootmode);
+
+static int __init parse_tag_mac(const struct tag *tag)
+{
+    memset(system_mac_addr, 0, MAC_ADDR_SIZE+1);
+    memset(system_bt_mac_addr, 0, MAC_ADDR_SIZE+1);
+    memset(system_mac_sec, 0, MAC_SEC_SIZE+1);
+
+    memcpy(system_mac_sec, tag->u.macaddr.secret, MAC_SEC_SIZE);
+    memcpy(system_mac_addr, tag->u.macaddr.wifi_addr, MAC_ADDR_SIZE);
+    memcpy(system_bt_mac_addr, tag->u.macaddr.bt_addr, MAC_ADDR_SIZE);
+    pr_debug("ATAGS:mac:addr=%.*s secret=%.*s bt=%.*s\n",
+        MAC_ADDR_SIZE, system_mac_addr,
+        MAC_SEC_SIZE, system_mac_sec,
+        MAC_ADDR_SIZE, system_bt_mac_addr);
+
+	return 0;
+}
+
+__tagtable(ATAG_MACADDR, parse_tag_mac);
+
+#endif //CONFIG_MACH_OMAP4_BOWSER
+
+
 static int __init parse_tag_cmdline(const struct tag *tag)
 {
 #if defined(CONFIG_CMDLINE_EXTEND)
@@ -687,11 +776,12 @@ static int __init parse_tag(const struct tag *tag)
 	extern struct tagtable __tagtable_begin, __tagtable_end;
 	struct tagtable *t;
 
-	for (t = &__tagtable_begin; t < &__tagtable_end; t++)
+	for (t = &__tagtable_begin; t < &__tagtable_end; t++){
 		if (tag->hdr.tag == t->tag) {
 			t->parse(tag);
 			break;
 		}
+        }
 
 	return t < &__tagtable_end;
 }
@@ -857,9 +947,6 @@ static struct machine_desc * __init setup_machine_tags(unsigned int nr)
 		tags = (struct tag *)&init_tags;
 	}
 
-	if (mdesc->fixup)
-		mdesc->fixup(mdesc, tags, &from, &meminfo);
-
 	if (tags->hdr.tag == ATAG_CORE) {
 		if (meminfo.nr_banks != 0)
 			squash_mem_tags(tags);
@@ -867,6 +954,10 @@ static struct machine_desc * __init setup_machine_tags(unsigned int nr)
 		parse_tags(tags);
 	}
 
+
+	if (mdesc->fixup){
+		mdesc->fixup(mdesc, tags, &from, &meminfo);
+        }
 	/* parse_early_param needs a boot_command_line */
 	strlcpy(boot_command_line, from, COMMAND_LINE_SIZE);
 

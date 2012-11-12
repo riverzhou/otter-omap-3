@@ -330,6 +330,12 @@ static void txstate(struct musb *musb, struct musb_request *req)
 
 	musb_ep = req->ep;
 
+	/* Check if EP is disabled */
+	if (!musb_ep->desc) {
+		dev_dbg(musb->controller, "ep:%s disabled - ignore request\n",
+						musb_ep->end_point.name);
+		return;
+	}
 	/* we shouldn't get here while DMA is active ... but we do ... */
 	if (dma_channel_status(musb_ep->dma) == MUSB_DMA_STATUS_BUSY) {
 		dev_dbg(musb->controller, "dma pending...\n");
@@ -642,6 +648,12 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 		musb_ep = &hw_ep->ep_out;
 
 	len = musb_ep->packet_sz;
+	/* Check if EP is disabled */
+	if (!musb_ep->desc) {
+		dev_dbg(musb->controller, "ep:%s disabled - ignore request\n",
+					musb_ep->end_point.name);
+		return;
+	}
 
 	/* We shouldn't get here while DMA is active, but we do... */
 	if (dma_channel_status(musb_ep->dma) == MUSB_DMA_STATUS_BUSY) {
@@ -1898,8 +1910,6 @@ int usb_gadget_probe_driver(struct usb_gadget_driver *driver,
 		goto err0;
 	}
 
-	pm_runtime_get_sync(musb->controller);
-
 	dev_dbg(musb->controller, "registering driver %s\n", driver->function);
 
 	if (musb->gadget_driver) {
@@ -1909,6 +1919,8 @@ int usb_gadget_probe_driver(struct usb_gadget_driver *driver,
 		retval = -EBUSY;
 		goto err0;
 	}
+
+	pm_runtime_get_sync(musb->controller);
 
 	spin_lock_irqsave(&musb->lock, flags);
 	musb->gadget_driver = driver;
@@ -1950,10 +1962,12 @@ int usb_gadget_probe_driver(struct usb_gadget_driver *driver,
 		hcd->self.uses_pio_for_control = 1;
 	}
 
-	if (musb->xceiv->last_event == USB_EVENT_NONE) {
+	if ((musb->xceiv->last_event == USB_EVENT_NONE) ||
+			(musb->xceiv->last_event == USB_EVENT_CHARGER)) {
 		musb->xceiv->state = OTG_STATE_B_IDLE;
-		pm_runtime_put(musb->controller);
 	}
+
+	pm_runtime_put(musb->controller);
 
 	return 0;
 
@@ -1962,6 +1976,7 @@ err2:
 		musb_stop(musb);
 
 err1:
+	pm_runtime_put(musb->controller);
 	musb->gadget_driver = NULL;
 	musb->g.dev.driver = NULL;
 

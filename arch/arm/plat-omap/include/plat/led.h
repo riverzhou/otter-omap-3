@@ -20,5 +20,14 @@ struct omap_led_platform_data {
 	s16			nr_leds;
 	struct omap_led_config	*leds;
 };
+extern void omap4430_green_led_set(struct led_classdev *led_cdev,
+				        enum led_brightness value);
+extern void omap4430_orange_led_set(struct led_classdev *led_cdev,
+				        enum led_brightness value);
+extern int omap4430_green_led_set_blink(struct led_classdev *led_cdev,
+		unsigned long *delay_on, unsigned long *delay_off);
+extern int omap4430_orange_led_set_blink(struct led_classdev *led_cdev,
+		unsigned long *delay_on, unsigned long *delay_off);
+
 
 #endif

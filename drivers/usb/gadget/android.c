@@ -152,8 +152,8 @@ static struct usb_configuration android_config_driver = {
 	.label		= "android",
 	.unbind		= android_unbind_config,
 	.bConfigurationValue = 1,
-	.bmAttributes	= USB_CONFIG_ATT_ONE,
-	.bMaxPower	= 0xFA, /* 500ma */
+	.bmAttributes	= USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER,
+	.bMaxPower	= 0x01, /* 2ma */
 };
 
 static void android_work(struct work_struct *data)
@@ -596,8 +596,34 @@ static DEVICE_ATTR(inquiry_string, S_IRUGO | S_IWUSR,
 					mass_storage_inquiry_show,
 					mass_storage_inquiry_store);
 
+static ssize_t mass_storage_cdrom_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct android_usb_function *f = dev_get_drvdata(dev);
+	struct mass_storage_function_config *config = f->config;
+	int cdrom = config->common->luns[0].cdrom;
+	return sprintf(buf, "%d\n", cdrom);
+}
+
+static ssize_t mass_storage_cdrom_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	int cdrom = 0;
+	struct android_usb_function *f = dev_get_drvdata(dev);
+	struct mass_storage_function_config *config = f->config;
+	sscanf(buf, "%d", &cdrom);
+	if(cdrom) config->common->luns[0].cdrom = 1;
+	else config->common->luns[0].cdrom = 0;
+	return size;
+}
+
+static DEVICE_ATTR(cdrom, S_IRUGO | S_IWUSR,
+					mass_storage_cdrom_show,
+					mass_storage_cdrom_store);
+
 static struct device_attribute *mass_storage_function_attributes[] = {
 	&dev_attr_inquiry_string,
+	&dev_attr_cdrom,
 	NULL
 };
 
@@ -823,7 +849,6 @@ static ssize_t enable_store(struct device *pdev, struct device_attribute *attr,
 
 	sscanf(buff, "%d", &enabled);
 	if (enabled && !dev->enabled) {
-		cdev->next_string_id = 0;
 		/* update values in composite driver's copy of device descriptor */
 		cdev->desc.idVendor = device_desc.idVendor;
 		cdev->desc.idProduct = device_desc.idProduct;

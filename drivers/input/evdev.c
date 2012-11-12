@@ -25,6 +25,7 @@
 #include <linux/device.h>
 #include <linux/wakelock.h>
 #include "input-compat.h"
+#include <linux/trapz.h>
 
 struct evdev {
 	int open;
@@ -417,6 +418,15 @@ static ssize_t evdev_read(struct file *file, char __user *buffer,
 
 	while (retval + input_event_size() <= count &&
 	       evdev_fetch_next_event(client, &event)) {
+
+		if (event.type == EV_ABS && (event.code == ABS_MT_POSITION_X || event.code == ABS_MT_POSITION_Y)) {
+			TRAPZ_DESCRIBE(TRAPZ_KERN_INP_TOUCH, kernel_evdev,
+				"Touch event in linux touch framework (evdev)");
+			TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_INP_TOUCH, kernel_evdev,
+				"mxt touch x=%d y=%d",
+                                event.code == ABS_MT_POSITION_X ? event.value : 0,
+                                event.code == ABS_MT_POSITION_Y ? event.value : 0 );
+		}
 
 		if (input_event_to_user(buffer + retval, &event))
 			return -EFAULT;

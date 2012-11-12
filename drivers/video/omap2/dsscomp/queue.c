@@ -32,6 +32,7 @@
 #include <linux/debugfs.h>
 
 #include "dsscomp.h"
+#include <linux/trapz.h>
 /* queue state */
 
 static DEFINE_MUTEX(mtx);
@@ -397,6 +398,9 @@ static void dsscomp_mgr_delayed_cb(struct work_struct *work)
 	if (status == DSS_COMPLETION_PROGRAMMED) {
 		comp->state = DSSCOMP_STATE_PROGRAMMED;
 		log_state(comp, dsscomp_mgr_delayed_cb, status);
+		TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCompDelayedCBProgrammed, 
+        	        "DSSCOMP Delay Cb status: PROGRAMMED");
+		TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssCompDelayedCBProgrammed, 0, 0);
 
 		/* update used overlay mask */
 		mgrq[ix].ovl_mask = comp->ovl_mask & ~comp->ovl_dmask;
@@ -409,6 +413,10 @@ static void dsscomp_mgr_delayed_cb(struct work_struct *work)
 		/* composition is 1st displayed */
 		comp->state = DSSCOMP_STATE_DISPLAYED;
 		log_state(comp, dsscomp_mgr_delayed_cb, status);
+		TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCompDelayedCBDisplayed,
+			"DSSCOMP Delay Cb status: DISPLAYED");
+		TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssCompDelayedCBDisplayed, 0, 0);
+
 		if (debug & DEBUG_PHASES)
 			dev_info(DEV(cdev), "[%p] displayed\n", comp);
 	} else if (status & DSS_COMPLETION_RELEASED) {
@@ -416,6 +424,10 @@ static void dsscomp_mgr_delayed_cb(struct work_struct *work)
 		log_event(20 * comp->ix + 20, 0, comp, "%pf on %s",
 				(u32) dsscomp_mgr_delayed_cb,
 				(u32) log_status_str(status));
+		TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCompDelayedCBReleased,
+			"DSSCOMP Delay Cb status: RELEASED");
+		TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssCompDelayedCBReleased, 0, 0);
+
 		dsscomp_drop(comp);
 	}
 	mutex_unlock(&mtx);
@@ -579,6 +591,10 @@ skip_ovl_set:
 	/* no need for mutex as no callbacks are scheduled yet */
 	comp->state = DSSCOMP_STATE_APPLIED;
 	log_state(comp, dsscomp_apply, 0);
+	TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCompApply,
+		"DSSCOMP apply");              
+	TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssCompApply, 0, 0);
+
 
 	if (!d->win.w && !d->win.x)
 		d->win.w = dssdev->panel.timings.x_res - d->win.x;
@@ -677,6 +693,9 @@ int dsscomp_delayed_apply(dsscomp_t comp)
 	BUG_ON(comp->state != DSSCOMP_STATE_ACTIVE);
 	comp->state = DSSCOMP_STATE_APPLYING;
 	log_state(comp, dsscomp_delayed_apply, 0);
+	TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DssCompDelayedApply,
+		"DSSCOMP Delay Apply");              
+	TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DssCompDelayedApply, 0, 0);
 
 	if (debug & DEBUG_PHASES)
 		dev_info(DEV(cdev), "[%p] applying\n", comp);

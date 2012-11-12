@@ -58,6 +58,13 @@ config CPU_FREQ_DEFAULT_GOV_PERFORMANCE
 	  the frequency statically to the highest frequency supported by
 	  the CPU.
 
+config CPU_FREQ_DEFAULT_GOV_PERFACTIVE
+	bool "perfactive"
+	select CPU_FREQ_GOV_PERFACTIVE
+	help
+	  Use the CPUFreq governor 'perfactive' as default. This is a
+	  blend of 'performance' and 'interactive.'
+
 config CPU_FREQ_DEFAULT_GOV_POWERSAVE
 	bool "powersave"
 	depends on EXPERT
@@ -132,6 +139,18 @@ config CPU_FREQ_GOV_PERFORMANCE
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called cpufreq_performance.
+
+	  If in doubt, say Y.
+
+config CPU_FREQ_GOV_PERFACTIVE
+	tristate "'perfactive' governor"
+	help
+	  This cpufreq governor defaults to highest available CPU
+	  frequency but switches to interactive behavior with a
+	  userspace hint and timeout.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cpufreq_perfactive.
 
 	  If in doubt, say Y.
 

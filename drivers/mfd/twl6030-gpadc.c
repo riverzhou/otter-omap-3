@@ -88,18 +88,22 @@ static const u8 twl6030_trim_addr[TWL6030_GPADC_MAX_CHANNELS] = {
 /*
  * actual scaler gain is multiplied by 8 for fixed point operation
  * 1.875 * 8 = 15
+ * For channels 0, 1, 3, 4, 5, 6, 12, 13
+ * 1.25 * 8 = 10
+ * is used, as scaler is Vref * divider
+ * Vref = 1.25
  */
 static const u16 twl6030_gain[TWL6030_GPADC_MAX_CHANNELS] = {
-	1142,	/* CHANNEL 0 */
-	8,	/* CHANNEL 1 */
+	10,	/* CHANNEL 0 */
+	10,	/* CHANNEL 1 */
 
 	/* 1.875 */
 	15,	/* CHANNEL 2 */
 
-	8,	/* CHANNEL 3 */
-	8,	/* CHANNEL 4 */
-	8,	/* CHANNEL 5 */
-	8,	/* CHANNEL 6 */
+	10,	/* CHANNEL 3 */
+	10,	/* CHANNEL 4 */
+	10,	/* CHANNEL 5 */
+	10,	/* CHANNEL 6 */
 
 	/* 5 */
 	40,	/* CHANNEL 7 */
@@ -115,14 +119,18 @@ static const u16 twl6030_gain[TWL6030_GPADC_MAX_CHANNELS] = {
 
 	/* 1.875 */
 	15,	/* CHANNEL 11 */
-	8,	/* CHANNEL 12 */
-	8,	/* CHANNEL 13 */
+
+	10,	/* CHANNEL 12 */
+	10,	/* CHANNEL 13 */
 
 	/* 6.875 */
 	55,	/* CHANNEL 14 */
 
-	8,	/* CHANNEL 15 */
-	8,	/* CHANNEL 16 */
+	/* 6.25 */
+	50,	/* CHANNEL 15 */
+
+	/* 4.75 */
+	38,	/* CHANNEL 16 */
 };
 
 /*
@@ -232,6 +240,32 @@ static ssize_t set_offset(struct device *dev,
 	twl6030_calib_tbl[attr->index].offset_error = val;
 
 	return status;
+}
+
+static ssize_t show_value(struct device *dev,
+                struct device_attribute *devattr, char *buf)
+{
+        struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+        int temp1 = 0;
+        int temp2 = 0;
+        int ret;
+        int status;
+        struct twl6030_gpadc_request req;
+
+        req.channels = (1 << attr->index);
+        req.method = TWL6030_GPADC_SW2;
+        req.active = 0;
+        req.func_cb = NULL;
+        ret = twl6030_gpadc_conversion(&req);
+        if (ret < 0)
+                return ret;
+
+        if (req.rbuf[attr->index] > 0) {
+                temp1 = req.rbuf[attr->index];
+                temp2 = req.buf[attr->index].raw_code;
+                }
+                status = sprintf(buf, "%d\n", temp1);
+        return status;
 }
 
 static int twl6030_gpadc_read(struct twl6030_gpadc_data *gpadc, u8 reg)
@@ -521,7 +555,9 @@ EXPORT_SYMBOL(twl6030_gpadc_conversion);
 static SENSOR_DEVICE_ATTR(in##index##_gain, S_IRUGO|S_IWUSR, show_gain, \
 	set_gain, index); \
 static SENSOR_DEVICE_ATTR(in##index##_offset, S_IRUGO|S_IWUSR, show_offset, \
-	set_offset, index)
+	set_offset, index); \
+static SENSOR_DEVICE_ATTR(in##index##_value, S_IROTH|S_IWUSR, show_value, \
+        NULL, index);
 
 in_gain(0);
 in_gain(1);
@@ -543,7 +579,8 @@ in_gain(16);
 
 #define IN_ATTRS(X)\
 	&sensor_dev_attr_in##X##_gain.dev_attr.attr,	\
-	&sensor_dev_attr_in##X##_offset.dev_attr.attr	\
+	&sensor_dev_attr_in##X##_offset.dev_attr.attr,	\
+        &sensor_dev_attr_in##X##_value.dev_attr.attr
 
 static struct attribute *twl6030_gpadc_attributes[] = {
 	IN_ATTRS(0),

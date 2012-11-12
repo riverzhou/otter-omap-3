@@ -27,7 +27,9 @@
 #include <linux/sysdev.h>
 #include <linux/vmalloc.h>
 #include <linux/signal.h>
+#ifdef CONFIG_ANDROID
 #include <linux/device.h>
+#endif
 #include <linux/init.h>
 #include <linux/bootmem.h>
 
@@ -43,7 +45,9 @@
 #define TF_PA_CTRL_START		0x1
 #define TF_PA_CTRL_STOP		0x2
 
+#ifdef CONFIG_ANDROID
 static struct class *tf_ctrl_class;
+#endif
 
 #define TF_DEVICE_CTRL_BASE_NAME "tf_ctrl"
 
@@ -240,6 +244,19 @@ static int tf_ctrl_device_open(struct inode *inode, struct file *file)
 		goto error;
 	}
 
+#ifndef CONFIG_ANDROID
+	/*
+	 * Check file flags. We only autthorize the O_RDWR access
+	 */
+	if (file->f_flags != O_RDWR) {
+		dpr_err("%s(%p): "
+			"Invalid access mode %u\n",
+			__func__, file, file->f_flags);
+		error = -EACCES;
+		goto error;
+	}
+#endif
+
 	error = tf_ctrl_check_omap_type();
 	if (error <= 0)
 		return error;
@@ -256,6 +273,7 @@ static int tf_ctrl_device_open(struct inode *inode, struct file *file)
 	/*
 	 * Successful completion.
 	 */
+
 	dpr_info("%s(%p): Success\n", __func__, file);
 	return 0;
 
@@ -298,10 +316,12 @@ int __init tf_ctrl_device_register(void)
 		return error;
 	}
 
+#ifdef CONFIG_ANDROID
 	tf_ctrl_class = class_create(THIS_MODULE, TF_DEVICE_CTRL_BASE_NAME);
 	device_create(tf_ctrl_class, NULL,
 		dev->dev_number + 1,
 		NULL, TF_DEVICE_CTRL_BASE_NAME);
+#endif
 
 	mutex_init(&dev->dev_mutex);
 
@@ -364,7 +384,6 @@ void __exit tf_device_mshield_exit(void)
 	if (dev == NULL)
 		return;
 
-	mutex_lock(&dev->dev_mutex);
 	if (tf_ctrl_class != NULL) {
 		device_destroy(tf_ctrl_class, dev->dev_number + 1);
 		class_destroy(tf_ctrl_class);
@@ -372,7 +391,6 @@ void __exit tf_device_mshield_exit(void)
 	}
 	cdev_del(&(dev->cdev_ctrl));
 	unregister_chrdev_region(dev->dev_number + 1, 1);
-	mutex_unlock(&dev->dev_mutex);
 
 	dev->workspace_size = 0;
 	dev->workspace_addr = 0;

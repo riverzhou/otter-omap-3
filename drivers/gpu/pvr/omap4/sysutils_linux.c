@@ -42,6 +42,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/opp.h>
+#include <linux/trapz.h>
 
 #if defined(SUPPORT_DRI_DRM_PLUGIN)
 #include <drm/drmP.h>
@@ -152,6 +153,9 @@ void RequestSGXFreq(SYS_DATA *psSysData, IMG_BOOL bMaxFreq)
 
 	pdata = (struct gpu_platform_data *)gpsPVRLDMDev->dev.platform_data;
 	freq_index = bMaxFreq ? psSysSpecData->ui32SGXFreqListSize - 2 : 0;
+
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_PVR, PVRRequestSGXFreq, "RequestSGXFreq: toggling frequency. SwitchFreq = 1 means SGX switched to high frequency / SwitchFreq = 0 means SGX switched to low frequency");
+        TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_PVR, PVRRequestSGXFreq, "SwitchFreq = %d", bMaxFreq, 0);
 
 	if (psSysSpecData->ui32SGXFreqListIndex != freq_index)
 	{

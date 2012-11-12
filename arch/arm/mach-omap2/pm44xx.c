@@ -33,6 +33,7 @@
 #include <plat/omap-pm.h>
 #include <plat/gpmc.h>
 #include <plat/dma.h>
+#include <plat/omap_device.h>
 
 #include <mach/omap_fiq_debugger.h>
 
@@ -57,6 +58,10 @@
 #include "voltage.h"
 #include "vc.h"
 #include "control.h"
+
+#if defined(CONFIG_LAB126)
+#include <linux/metricslog.h>
+#endif
 
 struct power_state {
 	struct powerdomain *pwrdm;
@@ -84,7 +89,7 @@ static struct clockdomain *emif_clkdm, *mpuss_clkdm;
 /*
 * HSI - OMAP4430-2.2BUG00055:
 * HSI: DSP Swakeup generated is the same than MPU Swakeup.
-* System can’t enter in off mode due to the DSP.
+* System can't enter in off mode due to the DSP.
 */
 #define OMAP4_PM_ERRATUM_HSI_SWAKEUP_iXXX	BIT(2)
 
@@ -105,10 +110,64 @@ static struct clockdomain *emif_clkdm, *mpuss_clkdm;
  */
 #define OMAP4_PM_ERRATUM_MPU_EMIF_NO_DYNDEP_IDLE_iXXX	BIT(4)
 
+/*
+ * There is a HW bug in CMD PHY which gives ISO signals as same for both
+ * PADn and PADp on differential IO pad, because of which IO leaks higher
+ * as pull controls are differential internally and pull value does not
+ * match A value.
+ * Though there is no functionality impact due to this bug, it is seen
+ * that by disabling the pulls there is a savings ~500uA in OSWR, but draws
+ * ~300uA more during OFF mode.
+ * To save power during both idle/suspend following approach taken:
+ * 1) Enable WA during boot-up.
+ * 2) Disable WA while attempting suspend and enable during resume.
+ *
+ * CDDS no: OMAP4460-1.0BUG00291 (OMAP official errata ID yet to be available).
+ */
+#define OMAP4_PM_ERRATUM_LPDDR_CLK_IO_iXXX		BIT(5)
+#define LPDDR_WD_PULL_DOWN				0x02
+
+/* TI Errata i612 - Wkup Clk Recycling Needed After Warm Reset
+ * CRITICALITY: Low
+ * REVISIONS IMPACTED: OMAP4430 all
+ * Hardware does not recycle the I/O wake-up clock upon a global warm reset.
+ * When a warm reset is done, wakeups of daisy I/Os are disabled,
+ * but without the wake-up clock running, this change is not latched.
+ * Hence there is a possibility of seeing unexpected I/O wake-up events
+ * after warm reset.
+ *
+ * As W/A the call to omap4_trigger_ioctrl() has been added
+ * at PM initialization time for I/O pads daisy chain reseting.
+ **/
+#define OMAP4_PM_ERRATUM_IO_WAKEUP_CLOCK_NOT_RECYCLED_i612	BIT(7)
+
 u8 pm44xx_errata;
 #define is_pm44xx_erratum(erratum) (pm44xx_errata & OMAP4_PM_ERRATUM_##erratum)
 
 #define MAX_IOPAD_LATCH_TIME 1000
+
+void syscontrol_lpddr_clk_io_errata(bool enable)
+{
+	u32 v = 0;
+
+	if (!is_pm44xx_erratum(LPDDR_CLK_IO_iXXX))
+		return;
+
+	v = omap4_ctrl_pad_readl(OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO1_2);
+	if (enable)
+		v &= ~OMAP4_LPDDR2IO1_GR10_WD_MASK;
+	else
+		v |= LPDDR_WD_PULL_DOWN << OMAP4_LPDDR2IO1_GR10_WD_SHIFT;
+	omap4_ctrl_pad_writel(v, OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO1_2);
+
+	v = omap4_ctrl_pad_readl(OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO2_2);
+	if (enable)
+		v &= ~OMAP4_LPDDR2IO2_GR10_WD_MASK;
+	else
+		v |= LPDDR_WD_PULL_DOWN << OMAP4_LPDDR2IO1_GR10_WD_SHIFT;
+	omap4_ctrl_pad_writel(v, OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO2_2);
+}
+
 void omap4_trigger_ioctrl(void)
 {
 	int i = 0;
@@ -258,7 +317,13 @@ void omap4_enter_sleep(unsigned int cpu, unsigned int power_state, bool suspend)
 			OMAP4430_PRM_DEVICE_INST, OMAP4_PRM_IO_PMCTRL_OFFSET);
 	}
 
+	if (suspend)
+		syscontrol_lpddr_clk_io_errata(false);
+
 	omap4_enter_lowpower(cpu, power_state);
+
+	if (suspend)
+		syscontrol_lpddr_clk_io_errata(true);
 
 	if (omap4_device_prev_state_off()) {
 		/* Reconfigure the trim settings as well */
@@ -336,17 +401,56 @@ abort_gpio:
 #define MODULEMODE_DISABLED	0x0
 #define MODULEMODE_AUTO		0x1
 
+#if defined(CONFIG_LAB126)
+static struct work_struct metrics_work;
+static struct work_struct metrics_work_offmode;
+static char metrics_buf[512];
+static char metrics_buf_offmode[512];
+
+static void wokeup_metrics(struct work_struct *ptr)
+{
+	log_to_metrics(ANDROID_LOG_INFO, "kernel", metrics_buf);
+}
+
+static void wokeup_metrics_offmode(struct work_struct *ptr)
+{
+	log_to_metrics(ANDROID_LOG_INFO, "kernel", metrics_buf_offmode);
+}
+#endif
+
 static void _print_wakeirq(int irq)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
 
-	if (irq == OMAP44XX_IRQ_LOCALTIMER)
+	if (irq == OMAP44XX_IRQ_LOCALTIMER) {
 		pr_info("Resume caused by IRQ %d, localtimer\n", irq);
-	else if (!desc || !desc->action || !desc->action->name)
+
+#if defined(CONFIG_LAB126)
+		snprintf(metrics_buf, sizeof(metrics_buf),
+			"system_resume:woke_up:source=irq%d,name=localtimer:", irq);
+#endif
+	} else if (!desc || !desc->action || !desc->action->name) {
 		pr_info("Resume caused by IRQ %d\n", irq);
-	else
+
+#if defined(CONFIG_LAB126)
+		snprintf(metrics_buf, sizeof(metrics_buf),
+			"system_resume:woke_up:source=irq%d:", irq);
+#endif
+	} else {
 		pr_info("Resume caused by IRQ %d, %s\n", irq,
 			desc->action->name);
+
+#if defined(CONFIG_LAB126)
+		snprintf(metrics_buf, sizeof(metrics_buf),
+			"system_resume:woke_up:source=irq%d,name=%s:",
+			irq, desc->action->name);
+#endif
+	}
+
+#if defined(CONFIG_LAB126)
+	/* We cannot call log_to_metrics in an interrupt context */
+	schedule_work(&metrics_work);
+#endif
 }
 
 static void _print_gpio_wakeirq(int irq)
@@ -466,12 +570,26 @@ static void _print_prcm_wakeirq(int irq)
 			for_each_set_bit(bit, &wkevt, 32) {
 				pr_info("Resume caused by I/O pad: CONTROL_PADCONF_WAKEUPEVENT_%d[%d]\n",
 					i, bit);
+
+#if defined(CONFIG_LAB126)
+				snprintf(metrics_buf, sizeof(metrics_buf),
+					"system_resume:woke_up:source=CONTROL_PADCONF_WAKEUPEVENT_%d[%d]:",
+					i, bit);
+				schedule_work(&metrics_work);
+#endif
 				iopad_wake_found = 1;
 			}
 		}
 		wkup_pad_event = omap_readl(CONTROL_WKUP_PADCONF_WAKEUPEVENT_0);
 		for_each_set_bit(bit, &wkup_pad_event, 25) {
 			pr_info("Resume caused by wakeup I/O pad: CONTROL_WKUP_PADCONF_WAKEUPEVENT_0[%d]\n", bit);
+
+#if defined(CONFIG_LAB126)
+			snprintf(metrics_buf, sizeof(metrics_buf),
+				"system_resume:woke_up:source=CONTROL_PADCONF_WAKEUPEVENT_0[%d]:",
+				bit);
+			schedule_work(&metrics_work);
+#endif
 			iopad_wake_found = 1;
 		}
 	}
@@ -750,6 +868,13 @@ static int omap4_pm_suspend(void)
 	else
 		pr_err("Successfully put all powerdomains to target state\n");
 
+#if defined(CONFIG_LAB126)
+	snprintf(metrics_buf_offmode, sizeof(metrics_buf_offmode),
+		"system_resume:off_mode:%s=1:",
+		ret == 0 ? "success" : "fail");
+	schedule_work(&metrics_work_offmode);
+#endif
+
 	return 0;
 }
 
@@ -945,16 +1070,7 @@ static void __init syscontrol_setup_regs(void)
 	v |= OMAP4_LPDDR21_VREF_AUTO_EN_CA_MASK | OMAP4_LPDDR21_VREF_AUTO_EN_DQ_MASK;
         omap4_ctrl_pad_writel(v, OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO2_3);
 
-	/*
-	 * Workaround for CK differential IO PADn, PADp values due to bug in
-	 * EMIF CMD phy.
-	 */
-	v = omap4_ctrl_pad_readl(OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO1_2);
-	v &= ~OMAP4_LPDDR2IO1_GR10_WD_MASK;
-	omap4_ctrl_pad_writel(v, OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO1_2);
-	v = omap4_ctrl_pad_readl(OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO2_2);
-	v &= ~OMAP4_LPDDR2IO2_GR10_WD_MASK;
-	omap4_ctrl_pad_writel(v, OMAP4_CTRL_MODULE_PAD_CORE_CONTROL_LPDDR2IO2_2);
+	syscontrol_lpddr_clk_io_errata(true);
 }
 
 static void __init prcm_setup_regs(void)
@@ -1033,8 +1149,10 @@ static void __init prcm_setup_regs(void)
 	 * (in case WDT triggered while CLKREQ goes low), we also
 	 * add in the additional latencies.
 	 */
+#define HACK_EXTRA_TIME_USEC   (100 * 1000)
 	if (!voltdm_for_each(_voltdm_sum_time, (void *)&reset_delay_time)) {
 		reset_delay_time += tstart + tshut;
+		reset_delay_time += HACK_EXTRA_TIME_USEC;
 		val = _usec_to_val_scrm(rate32k, reset_delay_time,
 			OMAP4430_RSTTIME1_SHIFT, OMAP4430_RSTTIME1_MASK);
 		omap4_prminst_rmw_inst_reg_bits(OMAP4430_RSTTIME1_MASK, val,
@@ -1062,6 +1180,9 @@ no_32k:
 	omap4_prminst_write_inst_reg(0x3, OMAP4430_PRM_PARTITION,
 		OMAP4430_PRM_DEVICE_INST, OMAP4_PRM_PWRREQCTRL_OFFSET);
 
+	/* Handle errata i612 */
+	if (is_pm44xx_erratum(IO_WAKEUP_CLOCK_NOT_RECYCLED_i612))
+		omap4_trigger_ioctrl();
 }
 
 
@@ -1264,11 +1385,16 @@ static void __init omap4_pm_setup_errata(void)
 	 */
 	if (cpu_is_omap44xx())
 		pm44xx_errata |= OMAP4_PM_ERRATUM_IVA_AUTO_RET_iXXX |
-				 OMAP4_PM_ERRATUM_HSI_SWAKEUP_iXXX;
-	/* Dynamic Dependency errata for all silicon !=443x */
-	if (cpu_is_omap443x())
+				 OMAP4_PM_ERRATUM_HSI_SWAKEUP_iXXX |
+				 OMAP4_PM_ERRATUM_LPDDR_CLK_IO_iXXX;
+
+	if (cpu_is_omap443x()) {
+		/* Dynamic Dependency errata for all silicon !=443x */
 		pm44xx_errata |= OMAP4_PM_ERRATUM_MPU_EMIF_NO_DYNDEP_i688;
-	else
+		/* Enable errata i612 */
+		pm44xx_errata |=
+			OMAP4_PM_ERRATUM_IO_WAKEUP_CLOCK_NOT_RECYCLED_i612;
+	} else
 		pm44xx_errata |= OMAP4_PM_ERRATUM_MPU_EMIF_NO_DYNDEP_IDLE_iXXX;
 }
 
@@ -1281,8 +1407,10 @@ static void __init omap4_pm_setup_errata(void)
 static int __init omap4_pm_init(void)
 {
 	int ret = 0;
-	struct clockdomain *l3_1_clkdm;
+	struct clockdomain *l3_1_clkdm, *l4wkup;
 	struct clockdomain *ducati_clkdm, *l3_2_clkdm, *l4_per, *l4_cfg;
+	char *init_devices[] = {"mpu", "iva"};
+	int i;
 
 	if (!cpu_is_omap44xx())
 		return -ENODEV;
@@ -1328,6 +1456,12 @@ static int __init omap4_pm_init(void)
 	 * doesn't work as expected. The hardware recommendation is
 	 * to keep above dependencies. Without this system locks up or
 	 * randomly crashes.
+	 *
+	 * On 44xx:
+	 * The L4 wakeup depedency is added to workaround the OCP sync hardware
+	 * BUG with 32K synctimer which lead to incorrect timer value read
+	 * from the 32K counter. The BUG applies for GPTIMER1 and WDT2 which
+	 * are part of L4 wakeup clockdomain.
 	 */
 	mpuss_clkdm = clkdm_lookup("mpuss_clkdm");
 	emif_clkdm = clkdm_lookup("l3_emif_clkdm");
@@ -1336,7 +1470,8 @@ static int __init omap4_pm_init(void)
 	ducati_clkdm = clkdm_lookup("ducati_clkdm");
 	l4_per = clkdm_lookup("l4_per_clkdm");
 	l4_cfg = clkdm_lookup("l4_cfg_clkdm");
-	if ((!mpuss_clkdm) || (!emif_clkdm) || (!l3_1_clkdm) ||
+	l4wkup = clkdm_lookup("l4_wkup_clkdm");
+	if ((!mpuss_clkdm) || (!emif_clkdm) || (!l3_1_clkdm) || (!l4wkup) ||
 		(!l3_2_clkdm) || (!ducati_clkdm) || (!l4_per) || (!l4_cfg))
 		goto err2;
 
@@ -1353,6 +1488,7 @@ static int __init omap4_pm_init(void)
 		ret |= clkdm_add_wkdep(mpuss_clkdm, l4_cfg);
 		ret |= clkdm_add_wkdep(ducati_clkdm, l4_per);
 		ret |= clkdm_add_wkdep(ducati_clkdm, l4_cfg);
+		ret |= clkdm_add_wkdep(mpuss_clkdm, l4wkup);
 		if (ret) {
 			pr_err("Failed to add MPUSS -> L3/EMIF, DUCATI -> L3"
 			       " and MPUSS -> L4* wakeup dependency\n");
@@ -1370,6 +1506,7 @@ static int __init omap4_pm_init(void)
 		/* There appears to be a problem between the MPUSS and L3_1 */
 		ret |= clkdm_add_wkdep(mpuss_clkdm, l3_1_clkdm);
 		ret |= clkdm_add_wkdep(mpuss_clkdm, l3_2_clkdm);
+		ret |= clkdm_add_wkdep(mpuss_clkdm, l4wkup);
 
 		/* There appears to be a problem between the Ducati and L3/L4 */
 		ret |= clkdm_add_wkdep(ducati_clkdm, l3_1_clkdm);
@@ -1446,6 +1583,41 @@ static int __init omap4_pm_init(void)
 	omap_pm_is_ready_status = true;
 	/* let the other CPU know as well */
 	smp_wmb();
+
+	/* Setup the scales for every init device appropriately */
+	for (i = 0; i < ARRAY_SIZE(init_devices); i++) {
+		struct omap_hwmod *oh = omap_hwmod_lookup(init_devices[i]);
+		struct clk *clk;
+		struct device *dev;
+		unsigned int rate;
+
+		if (!oh || !oh->od || !oh->main_clk) {
+			pr_warn("%s: no hwmod or odev or clk for %s, [%d] "
+				"oh=%p od=%p clk=%p cannot add OPPs.\n",
+				__func__, init_devices[i], i, oh,
+				(oh) ? oh->od : NULL,
+				(oh) ? oh->main_clk :  NULL);
+			continue;
+		}
+
+		clk = oh->_clk;
+		dev = &oh->od->pdev.dev;
+		/* Get the current rate */
+		rate = clk_get_rate(clk);
+
+		/* Update DVFS framework with rate information */
+		ret = omap_device_scale(dev, dev, rate);
+		if (ret) {
+			dev_warn(dev, "%s unable to scale to %d - %d\n",
+				__func__, rate, ret);
+			/* Continue to next device */
+		}
+	}
+
+#if defined(CONFIG_LAB126)
+	INIT_WORK(&metrics_work, wokeup_metrics);
+	INIT_WORK(&metrics_work_offmode, wokeup_metrics_offmode);
+#endif
 
 err2:
 	return ret;

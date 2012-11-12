@@ -15,6 +15,8 @@
 #include <linux/omap_ion.h>
 #include <linux/platform_device.h>
 
+#include "omap_ram_console.h"
+
 #include "omap4_ion.h"
 
 static struct ion_platform_data omap4_ion_data = {
@@ -24,8 +26,7 @@ static struct ion_platform_data omap4_ion_data = {
 			.type = ION_HEAP_TYPE_CARVEOUT,
 			.id = OMAP_ION_HEAP_SECURE_INPUT,
 			.name = "secure_input",
-			.base = PHYS_ADDR_SMC_MEM -
-					OMAP4_ION_HEAP_SECURE_INPUT_SIZE,
+			.base = PHYS_ADDR_DUCATI_MEM + PHYS_ADDR_DUCATI_SIZE,
 			.size = OMAP4_ION_HEAP_SECURE_INPUT_SIZE,
 		},
 		{	.type = OMAP_ION_HEAP_TYPE_TILER,
@@ -39,7 +40,11 @@ static struct ion_platform_data omap4_ion_data = {
 			.type = OMAP_ION_HEAP_TYPE_TILER,
 			.id = OMAP_ION_HEAP_NONSECURE_TILER,
 			.name = "nonsecure_tiler",
-			.base = 0x80000000 + SZ_512M + SZ_2M,
+#ifdef CONFIG_OTTER
+			.base = 0x80000000 + (SZ_1M * 400) + SZ_4K,
+#else
+			.base = 0x80000000 + (SZ_1M * 906) + SZ_256K,
+#endif
 			.size = OMAP4_ION_HEAP_NONSECURE_TILER_SIZE,
 		},
 	},
@@ -63,13 +68,21 @@ void __init omap_ion_init(void)
 	int i;
 	int ret;
 
-	memblock_remove(OMAP4_RAMCONSOLE_START, OMAP4_RAMCONSOLE_SIZE);
 
+	memblock_remove(OMAP_RAM_CONSOLE_START_DEFAULT, OMAP_RAM_CONSOLE_SIZE_DEFAULT);
+	printk(KERN_INFO "RAMCONSOLE size=%dMB, addr=0x%lx\n",
+		(OMAP_RAM_CONSOLE_SIZE_DEFAULT >> 20), OMAP_RAM_CONSOLE_START_DEFAULT);
 	for (i = 0; i < omap4_ion_data.nr; i++)
 		if (omap4_ion_data.heaps[i].type == ION_HEAP_TYPE_CARVEOUT ||
 		    omap4_ion_data.heaps[i].type == OMAP_ION_HEAP_TYPE_TILER) {
 			ret = memblock_remove(omap4_ion_data.heaps[i].base,
 					      omap4_ion_data.heaps[i].size);
+
+			printk(KERN_INFO "%s: ion_heap[%d] name=%s, size=%dMB, addr=0x%lx\n",
+				__func__, i, omap4_ion_data.heaps[i].name,
+				(omap4_ion_data.heaps[i].size >> 20),
+				omap4_ion_data.heaps[i].base);
+
 			if (ret)
 				pr_err("memblock remove of %x@%lx failed\n",
 				       omap4_ion_data.heaps[i].size,

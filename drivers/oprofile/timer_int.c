@@ -26,7 +26,7 @@ static int ctr_running;
 static enum hrtimer_restart oprofile_hrtimer_notify(struct hrtimer *hrtimer)
 {
 	oprofile_add_sample(get_irq_regs(), 0);
-	hrtimer_forward_now(hrtimer, ns_to_ktime(TICK_NSEC));
+	hrtimer_forward_now(hrtimer, ns_to_ktime(TICK_NSEC/8));
 	return HRTIMER_RESTART;
 }
 
@@ -40,7 +40,7 @@ static void __oprofile_hrtimer_start(void *unused)
 	hrtimer_init(hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	hrtimer->function = oprofile_hrtimer_notify;
 
-	hrtimer_start(hrtimer, ns_to_ktime(TICK_NSEC),
+	hrtimer_start(hrtimer, ns_to_ktime(TICK_NSEC/8),
 		      HRTIMER_MODE_REL_PINNED);
 }
 
@@ -97,6 +97,50 @@ static struct notifier_block __refdata oprofile_cpu_notifier = {
 	.notifier_call = oprofile_cpu_notify,
 };
 
+#ifndef OP_COUNTER_H
+#define OP_COUNTER_H
+
+/* Per performance monitor configuration as set via
+ * oprofilefs.
+ */
+struct op_counter_config {
+	unsigned long count ;
+	unsigned long enabled;
+	unsigned long event;
+	unsigned long unit_mask;
+	unsigned long kernel;
+	unsigned long user;
+};
+
+#endif /* OP_COUNTER_H */
+
+static struct op_counter_config dummy_config = {.count = 4};
+
+static int op_create_files(struct super_block *sb, struct dentry *root)
+{
+	unsigned int i;
+
+	for (i = 0; i < 1; i++) {
+		struct dentry *dir;
+		char buf[4];
+
+		snprintf(buf, sizeof buf, "%d", i);
+		dir = oprofilefs_mkdir(sb, root, buf);
+		oprofilefs_create_ulong(sb, dir, "enabled",
+						&dummy_config.enabled);
+		oprofilefs_create_ulong(sb, dir, "event", &dummy_config.event);
+		oprofilefs_create_ulong(sb, dir, "count", &dummy_config.count);
+		oprofilefs_create_ulong(sb, dir, "unit_mask",
+						&dummy_config.unit_mask);
+		oprofilefs_create_ulong(sb, dir, "kernel",
+						&dummy_config.kernel);
+		oprofilefs_create_ulong(sb, dir, "user", &dummy_config.user);
+	}
+
+	return 0;
+}
+
+
 int oprofile_timer_init(struct oprofile_operations *ops)
 {
 	int rc;
@@ -104,7 +148,7 @@ int oprofile_timer_init(struct oprofile_operations *ops)
 	rc = register_hotcpu_notifier(&oprofile_cpu_notifier);
 	if (rc)
 		return rc;
-	ops->create_files = NULL;
+	ops->create_files = op_create_files;
 	ops->setup = NULL;
 	ops->shutdown = NULL;
 	ops->start = oprofile_hrtimer_start;

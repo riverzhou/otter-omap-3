@@ -6,6 +6,7 @@
 #include <video/dsscomp.h>
 #include <plat/dsscomp.h>
 #include "dsscomp.h"
+#include <linux/trapz.h>
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
@@ -166,6 +167,9 @@ int dsscomp_gralloc_queue(struct dsscomp_setup_dispc_data *d,
 	int skip;
 	struct dsscomp_gralloc_t *gsync;
 	struct dss2_rect_t win = { .w = 0 };
+           
+        TRAPZ_DESCRIBE(TRAPZ_KERN_DISP_DSS, DSSCompGrallocQueue, "DSSComp queuing flip");          
+        TRAPZ_LOG_BEGIN(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DSSCompGrallocQueue);
 
 	/* reserve tiler areas if not already done so */
 	dsscomp_gralloc_init(cdev);
@@ -435,6 +439,8 @@ skip_comp:
 	dsscomp_gralloc_cb(gsync, DSS_COMPLETION_RELEASED);
 
 	mutex_unlock(&local_mtx);
+
+        TRAPZ_LOG_END(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_DISP_DSS, DSSCompGrallocQueue);
 
 	return r;
 }

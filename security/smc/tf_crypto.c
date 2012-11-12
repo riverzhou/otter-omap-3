@@ -233,7 +233,7 @@ u32 tf_crypto_init(void)
 	mutex_init(&dev->sm.dma_mutex);
 
 	/*allocate DMA buffer */
-	dev->dma_buffer_length = PAGE_SIZE * 16;
+	dev->dma_buffer_length = PAGE_SIZE;
 	dev->dma_buffer = dma_alloc_coherent(NULL,
 		dev->dma_buffer_length,
 		&(dev->dma_buffer_phys),
@@ -1197,3 +1197,6 @@ int tf_crypto_execute_rpc(u32 rpc_command, void *rpc_shared_buffer)
 
 	return -1;
 }
+
+
+
