@@ -16,6 +16,7 @@
 #include <linux/spinlock.h>
 #include <linux/rwsem.h>
 #include <linux/timer.h>
+#include <linux/thermal_framework.h>
 
 struct device;
 /*
@@ -74,6 +75,9 @@ struct led_classdev {
 	struct list_head	 trig_list;
 	void			*trigger_data;
 #endif
+	struct thermal_dev 	*tdev;
+	int 			max_thermal_brightness;
+	int 			saved_brightness;
 };
 
 extern int led_classdev_register(struct device *parent,

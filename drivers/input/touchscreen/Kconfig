@@ -762,3 +762,11 @@ config TOUCHSCREEN_CYPRESS_TTSP
 	  If unsure, say N.
 
 endif
+
+config TOUCHSCREEN_ILITEK
+	tristate "ilitek touchscreen driver"
+	help
+	  Say Y here if you have a Ilitek based touchscreen.
+	  This is the i2c version of the driver.
+
+	  To compile this driver as a module, choose M here.
