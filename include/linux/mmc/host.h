@@ -389,6 +389,8 @@ static inline void mmc_set_disable_delay(struct mmc_host *host,
 /* Module parameter */
 extern int mmc_assume_removable;
 
+extern void mmc_flush_scheduled_work(void);
+
 static inline int mmc_card_is_removable(struct mmc_host *host)
 {
 	return !(host->caps & MMC_CAP_NONREMOVABLE) && mmc_assume_removable;
