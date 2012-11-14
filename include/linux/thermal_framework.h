@@ -57,6 +57,22 @@ struct thermal_dev_ops {
 };
 
 /**
+ * struct thermal_cooling_action  - Structure for each action to reduce temp.
+ * @priority: This action must be taken when there is a message with cooling
+ *            level / priority equals to @priority
+ * @reduction: The reduction from maximum value in percentage that needs
+ *             to be taken when executing this action.
+ */
+struct thermal_cooling_action {
+	unsigned int priority;
+	unsigned int reduction;
+	struct list_head node;
+#ifdef CONFIG_THERMAL_FRAMEWORK_DEBUG
+	struct dentry *d;
+#endif
+};
+
+/**
  * struct thermal_dev  - Structure for each thermal device.
  * @name: The name of the device that is registering to the framework
  * @domain_name: The temperature domain that the thermal device represents
@@ -73,6 +89,7 @@ struct thermal_dev {
 	const char	*domain_name;
 	struct device	*dev;
 	struct thermal_dev_ops *dev_ops;
+	struct list_head cooling_actions;
 	struct list_head node;
 	int 		current_temp;
 	struct thermal_domain	*domain;
@@ -106,6 +123,43 @@ struct thermal_dev {
 		if (ret < 0)						\
 			pr_debug("%s: failed to call " #f		\
 				" on thermal device\n", __func__);	\
+	}								\
+	ret;								\
+})
+
+/**
+ * Call the specific call back for a given thermal devices "dev". It will call
+ * the call back when it finds the matching entry from the list.
+ */
+#define thermal_device_call_dev(tdev_list, dev, f, args...)			\
+({										\
+	struct thermal_dev *tdev;						\
+	int ret = -ENODEV;							\
+										\
+	list_for_each_entry(tdev, (tdev_list), node) {				\
+		if (!(strcmp(tdev->name, dev))) {				\
+			ret = thermal_device_call(tdev, f , ##args);		\
+			if (ret < 0)						\
+				pr_debug("%s: failed to call " #f		\
+				" on thermal device\n", __func__);		\
+			break;							\
+		}								\
+	}									\
+	ret;									\
+})
+
+/**
+ * Search a set of cooling actions for the specific reduction, based on
+ * the required cooling level/priority.
+ */
+#define thermal_cooling_device_reduction_get(tdev, p)			\
+({									\
+	struct thermal_cooling_action *tcact;				\
+	int ret = -ENODEV;						\
+									\
+	list_for_each_entry(tcact, &(tdev)->cooling_actions, node) {	\
+		if (tcact->priority == (p))				\
+			ret = tcact->reduction;				\
 	}								\
 	ret;								\
 })
