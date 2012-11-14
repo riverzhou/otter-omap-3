@@ -217,6 +217,12 @@ static int omap_abe_dl1_enabled(struct omap_abe_data *abe_priv)
 	return dl1;
 }
 
+static int omap_abe_dl2_enabled(struct omap_abe_data *abe_priv)
+{
+	return omap_abe_port_is_enabled(abe_priv->abe,
+				abe_priv->port[OMAP_ABE_BE_PORT_PDM_DL2]);
+}
+
 static void mute_be(struct snd_soc_pcm_runtime *be,
 		struct snd_soc_dai *dai, int stream)
 {
@@ -402,9 +408,13 @@ static void enable_be_port(struct snd_soc_pcm_runtime *be,
 				return;
 
 			/* MM_EXT connection to McBSP 2 ports */
+#ifdef CONFIG_ABE_44100
+			format.f = 44100;
+#else
 			format.f = 48000;
+#endif
 			format.samp_format = STEREO_RSHIFTED_16;
-			abe_connect_serial_port(MM_EXT_OUT_PORT, &format, MCBSP2_TX);
+			abe_connect_serial_port(MM_EXT_OUT_PORT, &format, MCBSP3_TX);
 			omap_abe_port_enable(abe_priv->abe,
 				abe_priv->port[OMAP_ABE_BE_PORT_MM_EXT_DL]);
 		} else {
@@ -415,9 +425,13 @@ static void enable_be_port(struct snd_soc_pcm_runtime *be,
 				return;
 
 			/* MM_EXT connection to McBSP 2 ports */
+#ifdef CONFIG_ABE_44100
+			format.f = 44100;
+#else
 			format.f = 48000;
+#endif
 			format.samp_format = STEREO_RSHIFTED_16;
-			abe_connect_serial_port(MM_EXT_IN_PORT, &format, MCBSP2_RX);
+			abe_connect_serial_port(MM_EXT_IN_PORT, &format, MCBSP3_RX);
 			omap_abe_port_enable(abe_priv->abe,
 				abe_priv->port[OMAP_ABE_BE_PORT_MM_EXT_UL]);
 		}
@@ -577,20 +591,28 @@ static void disable_fe_port(struct snd_pcm_substream *substream,
 	}
 }
 
-static void mute_fe_port_capture(struct snd_soc_pcm_runtime *fe, int mute)
+static void mute_fe_port_capture(struct snd_soc_pcm_runtime *fe,
+				struct snd_soc_pcm_runtime *be, int mute)
 {
-	dev_dbg(&fe->dev, "%s: %s FE %s\n",
+	struct omap_abe_data *abe_priv = snd_soc_dai_get_drvdata(fe->cpu_dai);
+
+	dev_dbg(&fe->dev, "%s: %s FE %s BE %s\n",
 			__func__, mute ? "mute" : "unmute",
-			fe->dai_link->name);
+			fe->dai_link->name, be->dai_link->name);
 
 	switch (fe->cpu_dai->id) {
 	case ABE_FRONTEND_DAI_MEDIA_CAPTURE:
-		if (mute) {
-			abe_mute_gain(MIXDL1, MIX_DL1_INPUT_MM_UL2);
-			abe_mute_gain(MIXDL2, MIX_DL2_INPUT_MM_UL2);
-		} else {
-			abe_unmute_gain(MIXDL1, MIX_DL1_INPUT_MM_UL2);
-			abe_unmute_gain(MIXDL2, MIX_DL2_INPUT_MM_UL2);
+		if (omap_abe_dl1_enabled(abe_priv)) {
+			if (mute)
+				abe_mute_gain(MIXDL1, MIX_DL1_INPUT_MM_UL2);
+			else
+				abe_unmute_gain(MIXDL1, MIX_DL1_INPUT_MM_UL2);
+		}
+		if (omap_abe_dl2_enabled(abe_priv)) {
+			if (mute)
+				abe_mute_gain(MIXDL2, MIX_DL2_INPUT_MM_UL2);
+			else
+				abe_unmute_gain(MIXDL2, MIX_DL2_INPUT_MM_UL2);
 		}
 		break;
 	case ABE_FRONTEND_DAI_MODEM:
@@ -609,40 +631,94 @@ static void mute_fe_port_capture(struct snd_soc_pcm_runtime *fe, int mute)
 	}
 }
 
-static void mute_fe_port_playback(struct snd_soc_pcm_runtime *fe, int mute)
+static void mute_fe_port_playback(struct snd_soc_pcm_runtime *fe,
+				struct snd_soc_pcm_runtime *be, int mute)
 {
-	dev_dbg(&fe->dev, "%s: %s FE %s\n",
+	struct omap_abe_data *abe_priv = snd_soc_dai_get_drvdata(fe->cpu_dai);
+
+	dev_dbg(&fe->dev, "%s: %s FE %s BE %s\n",
 			__func__, mute ? "mute" : "unmute",
-			fe->dai_link->name);
+			fe->dai_link->name, be->dai_link->name);
 
 	switch (fe->cpu_dai->id) {
 	case ABE_FRONTEND_DAI_MEDIA:
 	case ABE_FRONTEND_DAI_LP_MEDIA:
-		if (mute) {
-			abe_mute_gain(MIXDL1, MIX_DL1_INPUT_MM_DL);
-			abe_mute_gain(MIXDL2, MIX_DL2_INPUT_MM_DL);
-		} else {
-			abe_unmute_gain(MIXDL1, MIX_DL1_INPUT_MM_DL);
-			abe_unmute_gain(MIXDL2, MIX_DL2_INPUT_MM_DL);
+		switch (be->dai_link->be_id) {
+		case OMAP_ABE_DAI_PDM_DL1:
+		case OMAP_ABE_DAI_BT_VX:
+		case OMAP_ABE_DAI_MM_FM:
+			if (mute) {
+				/* mute if last running DL1-related BE */
+				if (omap_abe_dl1_enabled(abe_priv) == 1)
+					abe_mute_gain(MIXDL1,
+							MIX_DL1_INPUT_MM_DL);
+			} else {
+				abe_unmute_gain(MIXDL1, MIX_DL1_INPUT_MM_DL);
+			}
+			break;
+		case OMAP_ABE_DAI_PDM_DL2:
+			if (mute)
+				abe_mute_gain(MIXDL2, MIX_DL2_INPUT_MM_DL);
+			else
+				abe_unmute_gain(MIXDL2, MIX_DL2_INPUT_MM_DL);
+			break;
+		case OMAP_ABE_DAI_MODEM:
+		case OMAP_ABE_DAI_PDM_VIB:
+		default:
+			break;
 		}
 		break;
 	case ABE_FRONTEND_DAI_VOICE:
 	case ABE_FRONTEND_DAI_MODEM:
-		if (mute) {
-			abe_mute_gain(MIXDL1, MIX_DL1_INPUT_VX_DL);
-			abe_mute_gain(MIXDL2, MIX_DL2_INPUT_VX_DL);
-		} else {
-			abe_unmute_gain(MIXDL1, MIX_DL1_INPUT_VX_DL);
-			abe_unmute_gain(MIXDL2, MIX_DL2_INPUT_VX_DL);
+		switch (be->dai_link->be_id) {
+		case OMAP_ABE_DAI_PDM_DL1:
+		case OMAP_ABE_DAI_BT_VX:
+		case OMAP_ABE_DAI_MM_FM:
+			if (mute) {
+				/* mute if last running DL1-related BE */
+				if (omap_abe_dl1_enabled(abe_priv) == 1)
+					abe_mute_gain(MIXDL1,
+							MIX_DL1_INPUT_VX_DL);
+			} else {
+				abe_unmute_gain(MIXDL1, MIX_DL1_INPUT_VX_DL);
+			}
+			break;
+		case OMAP_ABE_DAI_PDM_DL2:
+			if (mute)
+				abe_mute_gain(MIXDL2, MIX_DL2_INPUT_VX_DL);
+			else
+				abe_unmute_gain(MIXDL2, MIX_DL2_INPUT_VX_DL);
+			break;
+		case OMAP_ABE_DAI_MODEM:
+		case OMAP_ABE_DAI_PDM_VIB:
+		default:
+			break;
 		}
 		break;
 	case ABE_FRONTEND_DAI_TONES:
-		if (mute) {
-			abe_mute_gain(MIXDL1, MIX_DL1_INPUT_TONES);
-			abe_mute_gain(MIXDL2, MIX_DL2_INPUT_TONES);
-		} else {
-			abe_unmute_gain(MIXDL1, MIX_DL1_INPUT_TONES);
-			abe_unmute_gain(MIXDL2, MIX_DL2_INPUT_TONES);
+		switch (be->dai_link->be_id) {
+		case OMAP_ABE_DAI_PDM_DL1:
+		case OMAP_ABE_DAI_BT_VX:
+		case OMAP_ABE_DAI_MM_FM:
+			if (mute) {
+				/* mute if last running DL1-related BE */
+				if (omap_abe_dl1_enabled(abe_priv) == 1)
+					abe_mute_gain(MIXDL1,
+							MIX_DL1_INPUT_TONES);
+			} else{
+				abe_unmute_gain(MIXDL1, MIX_DL1_INPUT_TONES);
+			}
+			break;
+		case OMAP_ABE_DAI_PDM_DL2:
+			if (mute)
+				abe_mute_gain(MIXDL2, MIX_DL2_INPUT_TONES);
+			else
+				abe_unmute_gain(MIXDL2, MIX_DL2_INPUT_TONES);
+			break;
+		case OMAP_ABE_DAI_MODEM:
+		case OMAP_ABE_DAI_PDM_VIB:
+		default:
+			break;
 		}
 		break;
 	case ABE_FRONTEND_DAI_VIBRA:
@@ -655,26 +731,42 @@ static void mute_fe_port(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *dai, int stream)
 {
 	struct snd_soc_pcm_runtime *fe = substream->private_data;
+	struct snd_soc_dsp_params *dsp_params;
 
 	dev_dbg(&fe->dev, "%s: %s %d\n", __func__, dai->name, stream);
 
-	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
-		mute_fe_port_playback(fe, 1);
-	else
-		mute_fe_port_capture(fe, 1);
+	list_for_each_entry(dsp_params, &fe->dsp[stream].be_clients, list_be) {
+		struct snd_soc_pcm_runtime *be = dsp_params->be;
+
+		if (!snd_soc_dsp_is_op_for_be(fe, be, stream))
+			continue;
+
+		if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+			mute_fe_port_playback(fe, be, 1);
+		else
+			mute_fe_port_capture(fe, be, 1);
+	}
 }
 
 static void unmute_fe_port(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *dai, int stream)
 {
 	struct snd_soc_pcm_runtime *fe = substream->private_data;
+	struct snd_soc_dsp_params *dsp_params;
 
 	dev_dbg(&fe->dev, "%s: %s %d\n", __func__, dai->name, stream);
 
-	if (stream == SNDRV_PCM_STREAM_PLAYBACK)
-		mute_fe_port_playback(fe, 0);
-	else
-		mute_fe_port_capture(fe, 0);
+	list_for_each_entry(dsp_params, &fe->dsp[stream].be_clients, list_be) {
+		struct snd_soc_pcm_runtime *be = dsp_params->be;
+
+		if (!snd_soc_dsp_is_op_for_be(fe, be, stream))
+			continue;
+
+		if (stream == SNDRV_PCM_STREAM_PLAYBACK)
+			mute_fe_port_playback(fe, be, 0);
+		else
+			mute_fe_port_capture(fe, be, 0);
+	}
 }
 
 static void capture_trigger(struct snd_pcm_substream *substream,
@@ -875,10 +967,12 @@ static void playback_trigger(struct snd_pcm_substream *substream,
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
+
+		/* mute FE port (sensitive to runtime udpates) */
+		mute_fe_port(substream, dai, stream);
+
 		/* does this trigger() apply to the FE ? */
 		if (snd_soc_dsp_is_trigger_for_fe(fe, stream)) {
-			/* mute FE port (sensitive to runtime udpates) */
-			mute_fe_port(substream, dai, stream);
 			/* disable the transfer */
 			disable_fe_port(substream, dai, stream);
 			snd_soc_dsp_platform_trigger(substream, cmd, fe->platform);
@@ -1392,14 +1486,23 @@ static struct snd_soc_dai_driver omap_abe_dai[] = {
 			.stream_name = "MultiMedia1 Playback",
 			.channels_min = 1,
 			.channels_max = 2,
-			.rates = SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_44100,
+#ifdef CONFIG_ABE_44100
+			.rates = SNDRV_PCM_RATE_44100,
+#else
+			.rates = SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000,
+#endif
 			.formats = OMAP_ABE_FORMATS,
 		},
 		.capture = {
 			.stream_name = "MultiMedia1 Capture",
 			.channels_min = 2,
 			.channels_max = 6,
-			.rates = SNDRV_PCM_RATE_48000,
+#ifdef CONFIG_ABE_44100
+			.rates = SNDRV_PCM_RATE_44100,
+#else
+			.rates = SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000,
+#endif
+//			.formats = OMAP_ABE_FORMATS,
 			.formats = SNDRV_PCM_FMTBIT_S32_LE,
 		},
 		.ops = &omap_abe_dai_ops,
@@ -1412,7 +1515,11 @@ static struct snd_soc_dai_driver omap_abe_dai[] = {
 			.stream_name = "MultiMedia2 Capture",
 			.channels_min = 1,
 			.channels_max = 2,
-			.rates = SNDRV_PCM_RATE_48000,
+#ifdef CONFIG_ABE_44100
+			.rates = SNDRV_PCM_RATE_44100,
+#else
+			.rates = SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000,
+#endif
 			.formats = OMAP_ABE_FORMATS,
 		},
 		.ops = &omap_abe_dai_ops,
@@ -1493,7 +1600,11 @@ static struct snd_soc_dai_driver omap_abe_dai[] = {
 			.stream_name = "MultiMedia1 LP Playback",
 			.channels_min = 2,
 			.channels_max = 2,
+#ifdef CONFIG_ABE_44100
+			.rates = SNDRV_PCM_RATE_44100,
+#else
 			.rates = SNDRV_PCM_RATE_44100 | SNDRV_PCM_RATE_48000,
+#endif
 			.formats = OMAP_ABE_FORMATS,
 		},
 		.ops = &omap_abe_dai_ops,
