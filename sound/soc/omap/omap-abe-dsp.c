@@ -2019,7 +2019,7 @@ static const struct snd_pcm_hardware omap_abe_hardware = {
 				  SNDRV_PCM_INFO_RESUME,
 	.formats		= SNDRV_PCM_FMTBIT_S16_LE |
 				  SNDRV_PCM_FMTBIT_S32_LE,
-	.period_bytes_min	= 4 * 1024,
+	.period_bytes_min	= 2 * 1024,
 	.period_bytes_max	= 24 * 1024,
 	.periods_min		= 4,
 	.periods_max		= 4,
@@ -2449,6 +2449,11 @@ static int aess_hw_params(struct snd_pcm_substream *substream,
 	abe->ping_pong_substream = substream;
 
 	format.f = params_rate(params);
+	if(format.f == 44100) {
+		dev_dbg(dai->dev, "%s: %s - set event generator at 44.1kHz\n",
+		__func__, dai->name);
+		abe_write_event_generator(EVENT_44100);
+	}
 	if (params_format(params) == SNDRV_PCM_FORMAT_S32_LE)
 		format.samp_format = STEREO_MSB;
 	else
@@ -2906,8 +2911,13 @@ static int abe_probe(struct snd_soc_platform *platform)
 		fw_data + sizeof(struct fw_header) + abe->hdr.coeff_size,
 		abe->hdr.firmware_size);
 
-	ret = request_threaded_irq(abe->irq, NULL, abe_irq_handler,
+	/*ret = request_threaded_irq(abe->irq, NULL, abe_irq_handler,
 				IRQF_ONESHOT, "ABE", (void *)abe);
+	Change IRQ from threaded to hard irq to avoid scheduling
+	issues of threaded irq*/
+
+	ret = request_irq(abe->irq, abe_irq_handler,
+				0, "ABE", (void *)abe);
 	if (ret) {
 		dev_err(platform->dev, "request for ABE IRQ %d failed %d\n",
 				abe->irq, ret);
@@ -2954,7 +2964,11 @@ static int abe_probe(struct snd_soc_platform *platform)
 	abe_load_fw(abe->firmware);
 
 	/* "tick" of the audio engine */
+#ifdef CONFIG_ABE_44100
+	abe_write_event_generator(EVENT_44100);
+#else
 	abe_write_event_generator(EVENT_TIMER);
+#endif
 
 	abe_dsp_init_gains(abe);
 
