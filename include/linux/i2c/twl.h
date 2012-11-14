@@ -671,6 +671,7 @@ struct twl4030_bci_platform_data {
 	unsigned int max_charger_currentmA;
 	unsigned int max_charger_voltagemV;
 	unsigned int termination_currentmA;
+	unsigned int max_battery_capacity;
 
 	unsigned int max_bat_voltagemV;
 	unsigned int low_bat_voltagemV;
@@ -742,8 +743,6 @@ struct twl4030_usb_data {
 	int		(*phy_exit)(struct device *dev);
 	/* Power on/off the PHY */
 	int		(*phy_power)(struct device *dev, int iD, int on);
-	/* enable/disable  phy clocks */
-	int		(*phy_set_clock)(struct device *dev, int on);
 	/* suspend/resume of phy */
 	int		(*phy_suspend)(struct device *dev, int suspend);
 };
@@ -1015,4 +1014,7 @@ static inline int twl4030charger_usb_en(int enable) { return 0; }
 
 #define TWL6032_ERRATA_DB00119490	(1 << 0)
 #define PHOENIX_MSK_TRANSITION      0x20
+#define TWL6030_ERRATA_DB00112620	(1 << 1)
+#define TWL6030_ERRATA_DB00110684	(1 << 2)
+
 #endif /* End of __TWL4030_H */

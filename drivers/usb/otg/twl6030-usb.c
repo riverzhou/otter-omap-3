@@ -146,6 +146,7 @@ static inline u8 twl6030_readb(struct twl6030_usb *twl, u8 module, u8 address)
 	return ret;
 }
 
+/*-------------------------------------------------------------------------*/
 static int twl6030_phy_init(struct otg_transceiver *x)
 {
 	struct twl6030_usb *twl;
@@ -354,6 +355,8 @@ static irqreturn_t twl6030_usbotg_irq(int irq, void *_twl)
 			status = USB_EVENT_ID;
 			twl->otg.default_a = true;
 			twl->otg.state = OTG_STATE_A_IDLE;
+			twl->linkstat = status;
+			twl->otg.last_event = status;
 			atomic_notifier_call_chain(&twl->otg.notifier, status,
 							twl->otg.gadget);
 			/*
