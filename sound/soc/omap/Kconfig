@@ -140,7 +140,6 @@ config SND_OMAP_SOC_RY_AIC3110
 	select SND_OMAP_SOC_ABE
 	select SND_OMAP_SOC_ABE_DSP
 	select ABE_44100
-	select SND_SOC_TWL6040
 	help
 	Say Y if you want to add support for SoC audio on the OMAP4 Board
 
