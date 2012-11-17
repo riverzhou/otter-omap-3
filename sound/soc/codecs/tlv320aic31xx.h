@@ -46,11 +46,11 @@
  */
 #define AIC3110_CODEC_SUPPORT
 
-#if defined(CONFIG_OTTER2)
+#if 0
 	#define CONFIG_MINIDSP
-#else /* CONFIG_OTTER2 */
-	#define USE DRC
-#endif /* CONFIG_OTTER2 */
+#else
+	#define USE_DRC
+#endif
 
 #ifdef AIC3110_CODEC_SUPPORT
 

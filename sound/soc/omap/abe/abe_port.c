@@ -664,11 +664,6 @@ int omap_abe_enable_data_transfer(struct omap_abe *abe, u32 id)
 		abe->MultiFrame[21][3] = ABE_TASK_ID(C_ABE_FW_TASK_IO_MM_EXT_IN);
 		break;
 	case OMAP_ABE_MM_EXT_OUT_PORT:
-		/* initializes the ABE ATC descriptors in DMEM for BE ports */
-		protocol = &(abe_port[id].protocol);
-		format = abe_port[id].format;
-		omap_abe_init_atc(abe, id);
-		abe_init_io_tasks(id, &format, protocol);
 		abe->MultiFrame[15][0] = ABE_TASK_ID(C_ABE_FW_TASK_IO_MM_EXT_OUT);
 		break;
 	default:
@@ -987,13 +982,17 @@ void abe_init_io_tasks(u32 id, abe_data_format_t *format,
 			omap_abe_dbg_error(abe, OMAP_ABE_ERR_API,
 					   ABE_PARAMETER_ERROR);
 		}
+#ifndef CONFIG_ABE_44100
 		if (abe_port[id].format.f == 44100) {
 			abe->MultiFrame[18][1] = ABE_TASK_ID(C_ABE_FW_TASK_SRC44P1_MMDL_PP);
 			smem1 = MM_DL_44P1_WPTR_labelID;
 		} else {
+#endif
 			abe->MultiFrame[18][1] = 0;
 			smem1 = smem_mm_dl;
+#ifndef CONFIG_ABE_44100
 		}
+#endif
 		/* able  interrupt to be generated at the first frame */
 		desc_pp.split_addr1 = 1;
 		copy_func_index = (u8) abe_dma_port_copy_subroutine_id(id);
@@ -1133,6 +1132,7 @@ void abe_init_io_tasks(u32 id, abe_data_format_t *format,
 		case OMAP_ABE_TONES_DL_PORT:
 			if (abe_port[id].format.f == 44100) {
 				smem1 = TONES_44P1_WPTR_labelID;
+				abe->MultiFrame[20][0] = ABE_TASK_ID(C_ABE_FW_TASK_IO_TONES_DL);
 				abe->MultiFrame[20][1] = ABE_TASK_ID(C_ABE_FW_TASK_SRC44P1_TONES_1211);
 			} else {
 				abe->MultiFrame[20][1] = 0;
@@ -1449,13 +1449,17 @@ void abe_init_io_tasks(u32 id, abe_data_format_t *format,
 			break;
 		case OMAP_ABE_MM_DL_PORT:
 			/* check for CBPr / serial_port / Ping-pong access */
+#ifndef CONFIG_ABE_44100
 			if (abe_port[id].format.f == 44100) {
 				smem1 = MM_DL_44P1_WPTR_labelID;
 				abe->MultiFrame[18][1] = ABE_TASK_ID(C_ABE_FW_TASK_SRC44P1_MMDL);
 			} else {
+#endif
 				abe->MultiFrame[18][1] = 0;
 				smem1 = smem_mm_dl;
+#ifndef CONFIG_ABE_44100
 			}
+#endif
 			break;
 		case OMAP_ABE_MM_EXT_IN_PORT:
 			/* set the SMEM buffer -- programming sequence */

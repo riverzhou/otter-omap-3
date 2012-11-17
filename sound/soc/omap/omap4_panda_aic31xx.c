@@ -376,18 +376,37 @@ static int Qoo_headset_jack_status_check(void)
 #endif
 
 		} else {
-				dev_info(codec->dev, "headset not connected\n");
-				hs_status = 0;
-			}
-	switch_set_state(&priv->hs_jack.sdev, hs_status);
-	priv->headset_connected = !gpio_status;
-	dev_info(codec->dev, "##%s : switch state = %d\n",
-			__func__, !gpio_status);
+			dev_info(codec->dev, "headset not connected\n");
+			hs_status = 0;
+		}
+		switch(hs_status){
+			case 0:
+				snd_soc_dapm_enable_pin(dapm, 	"Speaker Jack");
+				snd_soc_dapm_disable_pin(dapm, 	"Headphone Jack");
+				snd_soc_dapm_disable_pin(dapm, 	"HSMIC");
+				break;
+			case 1:
+				snd_soc_dapm_disable_pin(dapm, 	"Speaker Jack");
+				snd_soc_dapm_enable_pin(dapm, 	"Headphone Jack");
+				snd_soc_dapm_enable_pin(dapm, 	"HSMIC");
+				break;
+			case 2:
+				snd_soc_dapm_disable_pin(dapm, 	"Speaker Jack");
+				snd_soc_dapm_enable_pin(dapm, 	"Headphone Jack");
+				snd_soc_dapm_disable_pin(dapm, 	"HSMIC");
+				break;
+		}
+		ret = snd_soc_dapm_sync(dapm);
+		switch_set_state(&priv->hs_jack.sdev, hs_status);
+		priv->headset_connected = !gpio_status;
+		dev_info(codec->dev, "##%s : switch state = %d\n",
+				__func__, !gpio_status);
 
-	dev_dbg(codec->dev, "%s: Exiting\n", __func__);
-	return ret;
+		dev_dbg(codec->dev, "%s: Exiting\n", __func__);
+		return ret;
 
 	}
+	return 0 ;
 }
 
 /*
