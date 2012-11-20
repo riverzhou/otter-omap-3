@@ -184,6 +184,8 @@
 
 /* ANTICOLLAPSE_CTRL2 */
 #define BUCK_VTH_SHIFT			5
+#define ANTICOLL_ANA			(1 << 2)
+#define ANTICOLL_DIG			(1 << 1)
 
 /* FG_REG_00 */
 #define CC_ACTIVE_MODE_SHIFT	6
@@ -298,7 +300,8 @@ struct twl6030_bci_device_info {
 
 	unsigned int		capacity;
 	unsigned int		capacity_debounce_count;
-	unsigned long		ac_next_refresh;
+	unsigned int		max_battery_capacity;
+	unsigned int		boot_capacity_mAh;
 	unsigned int		prev_capacity;
 	unsigned int		wakelock_enabled;
 
@@ -322,39 +325,58 @@ struct twl6030_bci_device_info {
 
 	/* max scale current based on sense resitor */
 	int			current_max_scale;
+
+	unsigned int		min_vbus_val;
+};
+
+/* Battery capacity estimation table */
+struct batt_capacity_chart {
+	int volt;
+	unsigned int cap;
+};
+
+static struct batt_capacity_chart volt_cap_table[] = {
+	{ .volt = 3345, .cap =  7 },
+	{ .volt = 3450, .cap = 15 },
+	{ .volt = 3500, .cap = 30 },
+	{ .volt = 3600, .cap = 50 },
+	{ .volt = 3650, .cap = 70 },
+	{ .volt = 3780, .cap = 85 },
+	{ .volt = 3850, .cap = 95 },
 };
 
 static BLOCKING_NOTIFIER_HEAD(notifier_list);
 extern u32 wakeup_timer_seconds;
 
-static void twl6030_config_min_vbus_reg(struct twl6030_bci_device_info *di,
+static int twl6030_config_min_vbus_reg(struct twl6030_bci_device_info *di,
 						unsigned int value)
 {
 	u8 rd_reg = 0;
 	int ret;
+	u8 anticollapse_ctrl = ANTICOLLAPSE_CTRL2;
 
-	/* not required on TWL6032 */
 	if (di->features & TWL6032_SUBCLASS)
-		return;
+		anticollapse_ctrl = ANTICOLLAPSE_CTRL1;
 
 	if (value > 4760 || value < 4200) {
 		dev_dbg(di->dev, "invalid min vbus\n");
-		return;
+		return -EINVAL;
 	}
 
 	ret = twl_i2c_read_u8(TWL6030_MODULE_CHARGER, &rd_reg,
-					ANTICOLLAPSE_CTRL2);
+					anticollapse_ctrl);
 	if (ret)
 		goto err;
 	rd_reg = rd_reg & 0x1F;
 	rd_reg = rd_reg | (((value - 4200)/80) << BUCK_VTH_SHIFT);
 	ret = twl_i2c_write_u8(TWL6030_MODULE_CHARGER, rd_reg,
-					ANTICOLLAPSE_CTRL2);
+					anticollapse_ctrl);
 
 	if (!ret)
-		return;
+		return ret;
 err:
 	pr_err("%s: Error access to TWL6030 (%d)\n", __func__, ret);
+	return ret;
 }
 
 static void twl6030_config_iterm_reg(struct twl6030_bci_device_info *di,
@@ -646,6 +668,7 @@ static void twl6030_start_usb_charger_sw(struct twl6030_bci_device_info *di)
 {
 	int ret;
 	u8 reg = 0;
+	u8 reg_int_mask = 0;
 
 	if (!is_battery_present(di)) {
 		dev_dbg(di->dev, "BATTERY NOT DETECTED!\n");
@@ -671,6 +694,23 @@ static void twl6030_start_usb_charger_sw(struct twl6030_bci_device_info *di)
 		return;
 	}
 
+	if (di->errata & TWL6030_ERRATA_DB00110684) {
+		/* mask CHARGERUSB_THMREG interrupt */
+
+		ret = twl_i2c_read_u8(TWL6030_MODULE_CHARGER, &reg_int_mask,
+				CHARGERUSB_INT_MASK);
+
+		if (ret)
+			goto err;
+
+		reg_int_mask &= ~MASK_MCHARGERUSB_THMREG;
+
+		ret = twl_i2c_write_u8(TWL6030_MODULE_CHARGER, reg_int_mask,
+				CHARGERUSB_INT_MASK);
+		if (ret)
+			goto err;
+	}
+
 	twl6030_config_vichrg_reg(di, di->charger_outcurrentmA);
 	twl6030_config_cinlimit_reg(di, di->charger_incurrentmA);
 	twl6030_config_voreg_reg(di, di->platform_data->max_bat_voltagemV);
@@ -689,6 +729,17 @@ static void twl6030_start_usb_charger_sw(struct twl6030_bci_device_info *di)
 
 		di->charge_status = POWER_SUPPLY_STATUS_CHARGING;
 	}
+
+	if (di->errata & TWL6030_ERRATA_DB00110684) {
+		/* unmask CHARGERUSB_THMREG interrupt */
+		reg_int_mask |= MASK_MCHARGERUSB_THMREG;
+
+		ret = twl_i2c_write_u8(TWL6030_MODULE_CHARGER, reg_int_mask,
+				CHARGERUSB_INT_MASK);
+		if (ret)
+			goto err;
+	}
+
 	return;
 err:
 	pr_err("%s: Error access to TWL6030 (%d)\n", __func__, ret);
@@ -1442,6 +1493,15 @@ static int twl6030battery_current_setup(bool enable)
 	u8  reg = 0;
 
 	/*
+	 * Autoclear the register at init
+	 * This is done so early, because it might take
+	 * a while for the autoclear to take effect
+	 * and let's not add an unnecessary delay
+	 */
+	ret = twl_i2c_write_u8(TWL6030_MODULE_GASGAUGE, CC_AUTOCLEAR,
+								FG_REG_00);
+
+	/*
 	 * Writing 0 to REG_TOGGLE1 has no effect, so
 	 * can directly set/reset FG.
 	 */
@@ -1582,11 +1642,25 @@ static int twl6030_usb_autogate_charger(struct twl6030_bci_device_info *di)
 	return ret;
 }
 
+static int capacity_lookup(int volt)
+{
+	int i, table_size;
+	table_size = ARRAY_SIZE(volt_cap_table);
+
+	for (i = 1; i < table_size; i++) {
+		if (volt < volt_cap_table[i].volt)
+			break;
+	}
+
+	return volt_cap_table[i-1].cap;
+}
+
 static int capacity_changed(struct twl6030_bci_device_info *di)
 {
 	int curr_capacity = di->capacity;
-	int charger_source = di->charger_source;
-	int charging_disabled = 0;
+	s32 acc_value, samples = 0;
+	int accumulated_charge;
+	int ret;
 
 	/* Because system load is always greater than
 	 * termination current, we will never get a CHARGE DONE
@@ -1596,24 +1670,45 @@ static int capacity_changed(struct twl6030_bci_device_info *di)
 	 * we dont update capacity if we are charging.
 	 */
 
-	/* if it has been more than 10 minutes since our last update
-	 * and we are charging we force a update.
+	/* FG_REG_01, 02, 03 is 24 bit unsigned sample counter value */
+	ret = twl_i2c_read(TWL6030_MODULE_GASGAUGE, (u8 *) &samples,
+							FG_REG_01, 3);
+	if (ret < 0)
+		dev_dbg(di->dev, "Could not read fuel gauge samples\n");
+	/*
+	 * FG_REG_04, 5, 6, 7 is 32 bit signed accumulator value
+	 * accumulates instantaneous current value
+	 */
+	ret = twl_i2c_read(TWL6030_MODULE_GASGAUGE, (u8 *) &acc_value,
+							FG_REG_04, 4);
+	if (ret < 0)
+		dev_dbg(di->dev, "Could not read fuel gauge accumulator\n");
+
+	/*
+	 * 3000 mA maps to a count of 4096 per sample
+	 * We have 4 samples per second
+	 * Charge added in one second == (acc_value * 3000 / (4 * 4096))
+	 * mAh added == (Charge added in one second / 3600)
+	 * mAh added == acc_value * (3000/3600) / (4 * 4096)
+	 * mAh added == acc_value * (5/6) / (2^14)
+	 * Using 5/6 instead of 3000 to avoid overflow
+	 * FIXME: revisit this code for overflows
+	 * FIXME: Take care of different value of samples/sec
 	 */
 
-	if (time_after(jiffies, di->ac_next_refresh)
-		&& (di->charger_source != POWER_SUPPLY_TYPE_BATTERY)) {
+	accumulated_charge = ((acc_value - (di->cc_offset * samples))
+								* 5 / 6) >> 14;
+	curr_capacity = (di->boot_capacity_mAh + accumulated_charge) /
+					(di->max_battery_capacity / 100);
+	dev_dbg(di->dev, "voltage %d\n", di->voltage_mV);
+	dev_dbg(di->dev,
+		"initial capacity %d mAh, accumulated %d mAh, total %d mAh\n",
+			di->boot_capacity_mAh, accumulated_charge,
+			di->boot_capacity_mAh + accumulated_charge);
+	dev_dbg(di->dev, "percentage_capacity %d\n", curr_capacity);
 
-		charging_disabled = 1;
-		di->ac_next_refresh = jiffies +
-			msecs_to_jiffies(CHARGING_CAPACITY_UPDATE_PERIOD);
-		di->capacity = -1;
-
-		/* We have to disable charging to read correct
-		 * voltages.
-		 */
-		twl6030_stop_charger(di);
-		/*voltage setteling time*/
-		msleep(200);
+	if (curr_capacity > 99)
+		curr_capacity = 99;
 
 		di->voltage_mV = twl6030_get_gpadc_conversion(di,
 						di->gpadc_vbat_chnl);
@@ -1655,13 +1750,6 @@ static int capacity_changed(struct twl6030_bci_device_info *di)
 	 */
 	if (!is_battery_present(di))
 		curr_capacity = 100;
-
-       /* Debouncing of voltage change. */
-	if (di->capacity == -1) {
-		di->capacity = curr_capacity;
-		di->capacity_debounce_count = 0;
-		return 1;
-	}
 
 	if (curr_capacity != di->prev_capacity) {
 		di->prev_capacity = curr_capacity;
@@ -2289,7 +2377,8 @@ static ssize_t set_min_vbus(struct device *dev, struct device_attribute *attr,
 	int status = count;
 	struct twl6030_bci_device_info *di = dev_get_drvdata(dev);
 
-	if ((strict_strtol(buf, 10, &val) < 0) || (val < 4200) || (val > 4760))
+	if ((strict_strtol(buf, 10, &val) < 0) || (val < di->min_vbus_val) ||
+						(val > 4760))
 		return -EINVAL;
 	di->min_vbus = val;
 	twl6030_config_min_vbus_reg(di, val);
@@ -2635,7 +2724,6 @@ static int __devinit twl6030_bci_battery_probe(struct platform_device *pdev)
 	di->vac_priority = 2;
 	di->capacity = -1;
 	di->capacity_debounce_count = 0;
-	di->ac_next_refresh = jiffies - 1;
 	platform_set_drvdata(pdev, di);
 
 	/* calculate current max scale from sense */
@@ -2651,21 +2739,32 @@ static int __devinit twl6030_bci_battery_probe(struct platform_device *pdev)
 
 	wake_lock_init(&chrg_lock, WAKE_LOCK_SUSPEND, "ac_chrg_wake_lock");
 
-	if (di->errata & TWL6032_ERRATA_DB00119490) {
+	di->min_vbus_val = 4200;
+	if ((di->errata & TWL6032_ERRATA_DB00119490) ||
+		(di->errata & TWL6030_ERRATA_DB00112620)) {
 		/*
-		 * Set Anti-collapse threshold correspond
-		 * to the ERRATA DB00119490 (4.4 volts)
+		 * Enable Anti-collapse threshold:
+		 * for ERRATA DB00119490: 4.4 volts
+		 * for ERRATA DB00112620: 4.2 volts
 		 */
+		if (di->errata & TWL6032_ERRATA_DB00119490)
+			di->min_vbus_val = 4400;
+
+		ret = twl6030_config_min_vbus_reg(di, di->min_vbus_val);
+
+		if (ret)
+			goto temp_setup_fail;
+
+		/* Enable Anti-collapse threshold */
 		ret = twl_i2c_read_u8(TWL6030_MODULE_CHARGER, &reg,
 						ANTICOLLAPSE_CTRL1);
 		if (ret)
 			goto temp_setup_fail;
 
-		reg = reg & 0x1F;
-		reg = reg | ((0x3) << BUCK_VTH_SHIFT);
+		reg &= ~ANTICOLL_DIG;
+		reg |= ANTICOLL_ANA;
 		ret = twl_i2c_write_u8(TWL6030_MODULE_CHARGER, reg,
 						ANTICOLLAPSE_CTRL1);
-
 		if (ret)
 			goto temp_setup_fail;
 	}
@@ -2798,6 +2897,19 @@ static int __devinit twl6030_bci_battery_probe(struct platform_device *pdev)
 	dev_info(&pdev->dev, "Battery Voltage at Bootup is %d mV\n",
 							di->voltage_mV);
 
+	di->capacity = capacity_lookup(di->voltage_mV);
+	/*
+	 * If platform data did not report the battery capacity,
+	 * then assume a default value of 1000 mAh
+	 */
+	if (!pdata->max_battery_capacity) {
+		di->max_battery_capacity = 1000;
+		dev_dbg(di->dev,
+				"battery capacity unknown. Assume 1000 mAh\n");
+	} else {
+		di->max_battery_capacity = pdata->max_battery_capacity;
+	}
+	di->boot_capacity_mAh = di->max_battery_capacity * di->capacity / 100;
 	ret = twl_i2c_read_u8(TWL6030_MODULE_ID0, &hw_state, STS_HW_CONDITIONS);
 	if (ret)
 		goto  bk_batt_failed;
@@ -2984,13 +3096,6 @@ static int twl6030_bci_battery_suspend(struct device *dev)
 		return ret;
 	}
 
-	ret = twl6030battery_current_setup(false);
-	if (ret) {
-		pr_err("%s: Current measurement setup failed (%d)!\n",
-				__func__, ret);
-		return ret;
-	}
-
 	return 0;
 err:
 	pr_err("%s: Error access to TWL6030 (%d)\n", __func__, ret);
@@ -3008,13 +3113,6 @@ static int twl6030_bci_battery_resume(struct device *dev)
 	ret = twl6030battery_temp_setup(true);
 	if (ret) {
 		pr_err("%s: Temp measurement setup failed (%d)!\n",
-				__func__, ret);
-		return ret;
-	}
-
-	ret = twl6030battery_current_setup(true);
-	if (ret) {
-		pr_err("%s: Current measurement setup failed (%d)!\n",
 				__func__, ret);
 		return ret;
 	}

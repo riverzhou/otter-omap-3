@@ -11,3 +11,4 @@ obj-$(CONFIG_PANEL_TC358765) += panel-tc358765.o
 
 obj-$(CONFIG_PANEL_OTTER1) += panel-otter1.o
 
+obj-$(CONFIG_PANEL_LD089WU1) += panel-ld089wu1.o
