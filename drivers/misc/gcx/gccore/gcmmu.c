@@ -30,8 +30,6 @@
 #define GCZONE_FIXUP		(1 << 4)
 #define GCZONE_FLUSH		(1 << 5)
 #define GCZONE_ARENA		(1 << 6)
-#define GCZONE_DUMPMAP		(1 << 7)
-#define GCZONE_DUMPUNMAP	(1 << 8)
 
 GCDBG_FILTERDEF(mmu, GCZONE_NONE,
 		"init",
@@ -40,9 +38,7 @@ GCDBG_FILTERDEF(mmu, GCZONE_NONE,
 		"master",
 		"fixup",
 		"flush",
-		"arena",
-		"dumpmap",
-		"dumpunmap")
+		"arena")
 
 
 /*******************************************************************************
@@ -940,9 +936,6 @@ enum gcerror gcmmu_map(struct gccorecontext *gccorecontext,
 	GCDBG(GCZONE_MAPPING, "mapped %d bytes at 0x%08X\n",
 		vacant->size, vacant->address);
 
-	/* Dump tables. */
-	GCDUMPMMU(GCZONE_DUMPMAP, gcmmucontext);
-
 exit:
 	if (parray_alloc != NULL) {
 		kfree(parray_alloc);
@@ -1129,9 +1122,6 @@ enum gcerror gcmmu_unmap(struct gccorecontext *gccorecontext,
 
 	/* Invalidate the MMU. */
 	gcmmucontext->dirty = true;
-
-	/* Dump tables. */
-	GCDUMPMMU(GCZONE_DUMPUNMAP, gcmmucontext);
 
 exit:
 	if (locked)
